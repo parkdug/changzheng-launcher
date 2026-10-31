@@ -493,3 +493,10 @@ select, input[type=number], input[type=text] {
 .skin-card b { display: block; font-size: 12px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skin-del { position: absolute; top: 6px; right: 6px; color: #C0AA9C; font-size: 14px; cursor: pointer; }
 .skin-del:hover { color: #C2352F; }
+
+.btn.is-latest, .btn.is-latest:hover {
+  background: #EFE7E1; color: #9A8B84; border-color: #E4D8CE;
+  cursor: default; opacity: .85; box-shadow: none; transform: none;
+}
+
+#checkUpdateBtn, #reloadBtn { min-width: 128px; white-space: nowrap; }
