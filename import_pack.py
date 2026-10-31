@@ -31,8 +31,10 @@ def detect(path):
     return ""
 
 
-def _safe_dir(path):
-    return os.path.join(path)
+def _inside(base, target):
+    base_abs = os.path.abspath(base)
+    target_abs = os.path.abspath(target)
+    return target_abs == base_abs or target_abs.startswith(base_abs + os.sep)
 
 
 def import_changzheng(path, version_id, mc_dir, progress=None):
@@ -109,6 +111,8 @@ def import_mrpack(path, version_id, mc_dir, progress=None):
                 if not rel or rel.endswith("/"):
                     continue
                 target = os.path.join(ver_dir, rel.replace("/", os.sep))
+                if not _inside(ver_dir, target):
+                    continue
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 with zf.open(name) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
