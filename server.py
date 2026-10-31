@@ -34,6 +34,7 @@ import modgen
 import pack_tools
 import mods_api
 import tools
+import updater
 import translate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -695,7 +696,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/check_update":
             try:
-                self._json(tools.check_update(VERSION, cfg.get("update_url") or ""))
+                self._json(updater.check(VERSION, cfg.get("update_url") or ""))
             except Exception as error:
                 self._json({"ok": False, "error": str(error)})
             return
@@ -1182,48 +1183,13 @@ class Handler(BaseHTTPRequestHandler):
             def grab():
                 STATE["busy"] = True
                 folder = os.path.join(BASE, "updates")
-                os.makedirs(folder, exist_ok=True)
                 name = os.path.basename(url.split("?")[0]) or "update.zip"
                 target = os.path.join(folder, name)
-                last = None
-                for attempt in range(4):
-                    try:
-                        have = os.path.getsize(target) if os.path.isfile(target) else 0
-                        headers = {"User-Agent": "ChangzhengLauncher"}
-                        if have:
-                            headers["Range"] = "bytes=%d-" % have
-                        req2 = urllib.request.Request(url, headers=headers)
-                        try:
-                            resp = urllib.request.urlopen(req2, timeout=60)
-                        except Exception:
-                            resp = urllib.request.urlopen(req2, timeout=60, context=tools._ctx())
-                        mode = "ab" if have and resp.status == 206 else "wb"
-                        if mode == "wb":
-                            have = 0
-                        total = int(resp.headers.get("Content-Length") or 0) + have
-                        done = have
-                        with resp, open(target, mode) as handle:
-                            while True:
-                                chunk = resp.read(1 << 20)
-                                if not chunk:
-                                    break
-                                handle.write(chunk)
-                                done += len(chunk)
-                                if total:
-                                    progress("更新包 %d%%" % int(done * 100 / total))
-                        size = os.path.getsize(target)
-                        if total and size < total * 0.98:
-                            raise RuntimeError("没下完")
-                        STATE["update_file"] = target
-                        progress("更新包下好了（100/100）：%s" % target)
-                        last = None
-                        break
-                    except Exception as error:
-                        last = error
-                        progress("第 %d 次下载中断，重试…" % (attempt + 1))
-                        time.sleep(2)
-                if last is not None:
-                    progress("更新包下载失败：%s" % str(last)[:80])
+                path, error = updater.download(url, target, progress)
+                if path:
+                    STATE["update_file"] = path
+                else:
+                    progress(error)
                 STATE["busy"] = False
 
             threading.Thread(target=grab, daemon=True).start()
