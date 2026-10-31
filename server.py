@@ -39,8 +39,10 @@ import translate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # exe 旁边有 web 就用外部的，这样单独更新界面不用重新打包
+_BUNDLED_WEB = os.path.join(HERE, "web")
 _EXTERNAL_WEB = os.path.join(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE, "web")
-WEB = _EXTERNAL_WEB if os.path.isdir(_EXTERNAL_WEB) else os.path.join(HERE, "web")
+# 优先用打包在 exe 里的界面，避免外部残留的旧 web 把新界面盖掉
+WEB = _BUNDLED_WEB if os.path.isdir(_BUNDLED_WEB) else _EXTERNAL_WEB
 BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE
 CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
@@ -191,6 +193,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def end_headers(self):
+        try:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        except Exception:
+            pass
+        super().end_headers()
+
     def _json(self, payload, code=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
@@ -232,6 +241,9 @@ class Handler(BaseHTTPRequestHandler):
         cfg = load_config()
         if cfg.get("mc_dir"):
             core.MC_DIR = cfg["mc_dir"]
+        if path == "/api/ping":
+            self._json({"ok": True, "pong": True})
+            return
         if path == "/api/bootstrap":
             try:
                 os.makedirs(core.MC_DIR, exist_ok=True)
