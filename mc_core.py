@@ -1,4 +1,4 @@
-"""mc_core — 从 PCL 的 .minecraft 里读版本、拼启动命令、微软账号登录。
+"""mc_core — 读 .minecraft 里的版本、拼启动命令、微软账号登录。
 
 只依赖标准库，方便在任何机器上跑。
 """
@@ -21,17 +21,17 @@ def _default_mc_dir():
     local = os.path.join(base, ".minecraft")
     if os.path.isdir(local):
         return local
-    return r"D:\PCL\.minecraft"
+    # 公开版：没有自带 .minecraft 就用用户家目录下的标准位置
+    return os.path.join(os.path.expanduser("~"), ".minecraft")
 
 
 MC_DIR = os.environ.get("CZ_MC_DIR") or _default_mc_dir()
 JAVA_CANDIDATES = [
-    r"D:\PCL\PCL\Java",
     r"C:\Program Files\Java",
     r"C:\Program Files (x86)\Java",
     r"C:\Program Files\Eclipse Adoptium",
 ]
-UA = "ChangzhengLauncher/0.1"
+UA = "ChangzhengLauncher/1.0"
 
 
 # ────────────────────────────── 版本 ──────────────────────────────
