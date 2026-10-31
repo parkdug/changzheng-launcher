@@ -41,6 +41,29 @@ def open_edge_app(url):
     return False
 
 
+def http_ready(port, timeout=15):
+    """不光端口通，还要真能返回页面，避免开了窗口却连不上。"""
+    import urllib.request
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with urllib.request.urlopen("http://127.0.0.1:%d/" % port, timeout=2) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.4)
+    return False
+
+
+def log_line(text):
+    try:
+        base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(base, "launcher.log"), "a", encoding="utf-8") as handle:
+            handle.write("[%s] %s" % (time.strftime("%H:%M:%S"), text))
+    except Exception:
+        pass
+
+
 def run_window(url):
     """优先用 WebView2 原生窗口；失败再退 Edge 应用模式。"""
     try:
@@ -51,7 +74,11 @@ def run_window(url):
         webview.start()
         return True
     except Exception as error:
-        print("WebView2 窗口没起来：%s" % error, flush=True)
+        try:
+            if sys.stdout is not None:
+                print("WebView2 窗口没起来：%s" % error, flush=True)
+        except Exception:
+            pass
         return open_edge_app(url)
 
 
@@ -68,7 +95,8 @@ def main():
     threading.Thread(target=lambda: server.main(False), daemon=True).start()
     port = wait_state() or server.PORT
     url = "http://127.0.0.1:%d/" % port
-    if not wait_port(port, 15):
+    if not wait_port(port, 15) or not http_ready(port, 15):
+        log_line("服务没起来，port=%s" % port)
         try:
             import ctypes
             ctypes.windll.user32.MessageBoxW(0, "后端没起来，可能是杀毒软件拦了或者端口被占。可以试着右键用管理员运行一次。", "长征启动器", 0x10)
