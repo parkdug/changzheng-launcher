@@ -547,6 +547,19 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_error(404)
             return
+        if path == "/api/project":
+            pid = (query.get("id") or [""])[0]
+            mc_now = mc_version_of(STATE.get("chosen") or "") if STATE.get("chosen") else ""
+            try:
+                info = mods_api.project_detail(pid, mc_now)
+                try:
+                    translate.decorate([{"title": info["title"]}], limit=1, workers=1)
+                except Exception:
+                    pass
+                self._json({"ok": True, "project": info, "mc": mc_now})
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
+            return
         if path == "/api/mods":
             ver = (query.get("version") or [""])[0] or (STATE.get("chosen") or "")
             mods_dir = os.path.join(core.MC_DIR, "versions", ver, "mods")
@@ -647,6 +660,32 @@ class Handler(BaseHTTPRequestHandler):
                             "size": os.path.getsize(target)})
             except Exception as error:
                 self._json({"ok": False, "error": str(error)})
+            return
+        if parsed.path == "/api/mod/version":
+            local_ver = body.get("version") or STATE.get("chosen")
+            url = body.get("url") or ""
+            filename = body.get("filename") or ""
+            kind = body.get("type") or "mod"
+            if not url:
+                self._json({"ok": False, "error": "没有下载地址"})
+                return
+            ver_dir = os.path.join(core.MC_DIR, "versions", local_ver)
+            dest = {"mod": "mods", "shader": "shaderpacks", "resourcepack": "resourcepacks",
+                    "datapack": "datapacks"}.get(kind, "mods")
+            target_dir = os.path.join(ver_dir, dest)
+
+            def work():
+                STATE["busy"] = True
+                try:
+                    progress("下载 %s" % (filename or "文件"))
+                    path = mods_api.download(url, target_dir, filename or None)
+                    progress("装好了（100/100）：%s" % os.path.basename(path))
+                except Exception as error:
+                    progress("下载失败：%s" % error)
+                STATE["busy"] = False
+
+            threading.Thread(target=work, daemon=True).start()
+            self._json({"ok": True})
             return
         if parsed.path == "/api/import":
             path = body.get("path") or STATE.get("last_upload") or ""
