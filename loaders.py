@@ -53,7 +53,7 @@ def _installer(mc_version, kind, dest_dir, progress=None):
     os.makedirs(dest_dir, exist_ok=True)
     with open(jar, "wb") as handle:
         handle.write(_get(url, 120))
-    java = core.find_java()
+    java = core.find_java_for(mc_version)
     if not java:
         raise RuntimeError("没找到 Java，装不了 %s" % kind)
     say("运行 %s 安装器…" % kind)
