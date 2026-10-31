@@ -553,6 +553,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 info = mods_api.project_detail(pid, mc_now)
                 try:
+                    info["desc_zh"] = translate.translate_long(info.get("desc") or "", 300)
+                    info["body_zh"] = translate.translate_long(info.get("body") or "", 1200)
+                except Exception:
+                    info["desc_zh"] = ""
+                    info["body_zh"] = ""
+                try:
                     translate.decorate([{"title": info["title"]}], limit=1, workers=1)
                 except Exception:
                     pass
