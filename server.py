@@ -254,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
                 "versions": versions_payload(),
                 "chosen": STATE.get("chosen") or (core.list_versions() or [None])[0],
                 "config": cfg,
-                "java": core.find_java(),
+                "java": core.find_java_for(STATE.get("chosen") or "", cfg.get("java_path") or ""),
                 "mcDir": core.MC_DIR,
                 "profile": cfg.get("profile"),
                 "progress": STATE["progress"],
@@ -392,7 +392,9 @@ class Handler(BaseHTTPRequestHandler):
                         isolate = (cfg.get("isolation") or "隔离所有版本") != "不隔离"
                         game_dir = os.path.join(core.MC_DIR, "versions", ver_now) if isolate else core.MC_DIR
                         os.makedirs(game_dir, exist_ok=True)
-                        core.launch(version, profile, ram_mb=int(cfg.get("ram_mb") or 4096), game_dir=game_dir)
+                        core.launch(version, profile, ram_mb=int(cfg.get("ram_mb") or 4096),
+                                    game_dir=game_dir,
+                                    java=core.find_java_for(ver_now, cfg.get("java_path") or ""))
                         self._json({"ok": True, "kind": "chat", "items": [], "query": "",
                                     "explain": "开了，%s 正在启动。" % ver_now})
                     except Exception as error:
@@ -1241,7 +1243,8 @@ class Handler(BaseHTTPRequestHandler):
                     exe = os.path.join(BASE, "长征启动器.exe")
                     try:
                         if os.path.isfile(exe):
-                            _sp4.Popen([exe], cwd=BASE, creationflags=0x08000000)
+                            _sp4.Popen([exe, "--apply-update"], cwd=BASE,
+                                       creationflags=0x08000000, close_fds=True)
                     except Exception:
                         pass
                     threading.Timer(1.0, lambda: os._exit(0)).start()
@@ -1319,8 +1322,26 @@ class Handler(BaseHTTPRequestHandler):
                             handle.write("\n".join(lines) + "\n")
                     except Exception:
                         pass
+                mc_of_ver = version.get("inheritsFrom") or version.get("id") or ver
+                want_major = 0
+                try:
+                    want_major = jre.required_major(mc_of_ver)
+                except Exception:
+                    want_major = 0
+                java_used = core.find_java_for(ver, cfg.get("java_path") or "")
+                try:
+                    got = jre.major_of(java_used) if java_used else 0
+                    if want_major and got != want_major:
+                        progress("这个版本要 Java %d，本地没有，正在装…" % want_major)
+                        java_used = jre.ensure(core.JAVA_DIR, mc_of_ver, progress)
+                        if not cfg.get("java_path") and java_used:
+                            _c2 = load_config()
+                            _c2["java_path"] = java_used
+                            save_config(_c2)
+                except Exception as java_error:
+                    progress("Java 没准备好：%s" % str(java_error)[:60])
                 proc, _ = core.launch(version, profile, ram_mb=int(cfg.get("ram_mb") or 4096),
-                                      game_dir=game_dir)
+                                      game_dir=game_dir, java=java_used)
                 progress("已启动 %s（pid %s）" % (ver, proc.pid))
                 self._json({"ok": True})
             except Exception as error:
@@ -1404,7 +1425,7 @@ def apply_update_auto(zip_path, version_text):
         ]
         with open(bat, "w", encoding="utf-8") as handle:
             handle.write(chr(10).join(lines))
-        _sp.Popen(["cmd", "/c", bat], creationflags=0x08000000,
+        _sp.Popen(["cmd", "/c", bat], creationflags=0x08000000, close_fds=True,
                   stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
         import threading as _th
         _th.Timer(1.5, lambda: os._exit(0)).start()
