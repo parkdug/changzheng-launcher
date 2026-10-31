@@ -55,15 +55,32 @@ def run_window(url):
         return open_edge_app(url)
 
 
+def wait_state(seconds=20):
+    end = time.time() + seconds
+    while time.time() < end:
+        if server.STATE.get("port"):
+            return server.STATE["port"]
+        time.sleep(0.2)
+    return None
+
+
 def main():
     threading.Thread(target=lambda: server.main(False), daemon=True).start()
-    url = "http://127.0.0.1:%d/" % server.PORT
-    wait_port(server.PORT)
+    port = wait_state() or server.PORT
+    url = "http://127.0.0.1:%d/" % port
+    if not wait_port(port, 15):
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, "后端没起来，可能是杀毒软件拦了或者端口被占。可以试着右键用管理员运行一次。", "长征启动器", 0x10)
+        except Exception:
+            pass
+        return
     if not run_window(url):
         import webbrowser
         webbrowser.open(url)
-        while True:
-            time.sleep(3600)
+    # 窗口开出来以后不能让进程退出，否则本地服务跟着没了，页面就会“拒绝连接”
+    while True:
+        time.sleep(3600)
 
 
 if __name__ == "__main__":
