@@ -137,6 +137,16 @@ def lan_ip():
         return "127.0.0.1"
 
 
+def _safe_extract(zf, dest):
+    """防 zip slip：成员路径不许跑出目标目录。"""
+    dest_abs = os.path.abspath(dest)
+    for member in zf.namelist():
+        target = os.path.abspath(os.path.join(dest, member))
+        if not target.startswith(dest_abs + os.sep) and target != dest_abs:
+            raise RuntimeError("压缩包里有越界路径：%s" % member)
+    zf.extractall(dest)
+
+
 def progress(msg):
     import re as _re
     import time as _time
@@ -195,7 +205,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def end_headers(self):
         try:
-            self.send_header("Access-Control-Allow-Origin", "*")
+            origin = (self.headers.get("Origin") or "").lower()
+            allow = ""
+            if origin in ("null", "file://"):
+                allow = "null"          # file:// 页面（Electron/本地引导页）
+            elif origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost"):
+                allow = origin
+            if allow:
+                self.send_header("Access-Control-Allow-Origin", allow)
         except Exception:
             pass
         super().end_headers()
@@ -323,6 +340,8 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
                 payload_out = {"ok": True, "items": hits + extra, "mc": mc_ver, "loader": loader}
+                if len(_COMMUNITY_CACHE) > 40:
+                    _COMMUNITY_CACHE.clear()
                 _COMMUNITY_CACHE[cache_key] = (_t3.time(), payload_out)
                 self._json(payload_out)
             except Exception as error:
@@ -909,6 +928,7 @@ class Handler(BaseHTTPRequestHandler):
             trash = os.path.join(core.MC_DIR, "mods-trash")
             done, failed = [], []
             for name in files:
+                name = os.path.basename(name)
                 src = os.path.join(mods_dir, name)
                 try:
                     if action == "delete":
@@ -928,7 +948,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/mods/toggle":
             ver = body.get("version") or STATE.get("chosen")
             mods_dir = os.path.join(core.MC_DIR, "versions", ver, "mods")
-            name = body.get("file") or ""
+            name = os.path.basename(body.get("file") or "")
             src = os.path.join(mods_dir, name)
             try:
                 if name.endswith(".disabled"):
@@ -944,7 +964,7 @@ class Handler(BaseHTTPRequestHandler):
             mods_dir = os.path.join(core.MC_DIR, "versions", ver, "mods")
             trash = os.path.join(core.MC_DIR, "mods-trash")
             os.makedirs(trash, exist_ok=True)
-            name = body.get("file") or ""
+            name = os.path.basename(body.get("file") or "")
             try:
                 os.replace(os.path.join(mods_dir, name), os.path.join(trash, name))
                 self._json({"ok": True, "trash": trash})
@@ -952,7 +972,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": str(error)})
             return
         if parsed.path == "/api/version/delete":
-            ver = body.get("version") or ""
+            ver = os.path.basename(body.get("version") or "")
             src = os.path.join(core.MC_DIR, "versions", ver)
             if not ver or not os.path.isdir(src):
                 self._json({"ok": False, "error": "找不到这个版本"})
@@ -1235,7 +1255,7 @@ class Handler(BaseHTTPRequestHandler):
                     import shutil as _sh3
                     _sh3.rmtree(stage, ignore_errors=True)
                 with _zip3.ZipFile(src) as zf:
-                    zf.extractall(stage)
+                    _safe_extract(zf, stage)
                 self._json({"ok": True, "staged": stage, "auto": auto})
                 if auto:
                     # 不再用 bat：先启动一个新的自己，新进程启动时会把 updates/new 覆盖进来
@@ -1408,7 +1428,7 @@ def apply_update_auto(zip_path, version_text):
             import shutil as _sh
             _sh.rmtree(stage, ignore_errors=True)
         with _zip.ZipFile(zip_path) as zf:
-            zf.extractall(stage)
+            _safe_extract(zf, stage)
         with open(os.path.join(stage, "version.txt"), "w", encoding="utf-8") as handle:
             handle.write(version_text or VERSION)
         bat = os.path.join(BASE, "updates", "自动更新.bat")
