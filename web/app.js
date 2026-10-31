@@ -360,6 +360,8 @@ async function loadCommunity(reset) {
   items.forEach((item, i) => {
     const el = document.createElement("div");
     el.className = "mod-card";
+    el.dataset.pid = item.id || "";
+    el.dataset.kind = kind;
     el.style.animationDelay = ((start + i) * 8) + "ms";
     const icon = item.icon
       ? '<img class="mod-icon" src="' + item.icon + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
@@ -368,7 +370,9 @@ async function loadCommunity(reset) {
     const sub = item.zh ? '<span class="en">' + item.title + "</span> · " : "";
     el.innerHTML = icon +
       '<div class="mod-info"><div class="mod-title">' + shown + '</div><div class="mod-desc">' + sub +
-      (item.desc || "") + '</div></div><div class="mod-meta"><span class="dl">' +
+      (item.desc || "") + '</div>' +
+      ((item.versions && item.versions.length) ? '<div class="mod-vers">支持 ' + item.versions.slice(-5).join(" · ") + "</div>" : "") +
+      '</div><div class="mod-meta"><span class="dl">' +
       (item.downloads || 0).toLocaleString() + ' 下载</span><button class="btn primary">装这个</button></div>';
     el.querySelector("button").addEventListener("click", async () => {
       toast("下载 " + item.title);
