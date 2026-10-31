@@ -1,5 +1,15 @@
 // 项目详情：点卡片看介绍，按版本挑下载
 let pjCurrent = null;
+let pjLang = "zh";
+
+function renderBody() {
+  if (!pjCurrent) return;
+  const p = pjCurrent.project;
+  const zh = p.body_zh || p.body || p.desc_zh || p.desc || "";
+  const en = p.body || p.desc || "";
+  const text = pjLang === "zh" && (p.body_zh || p.desc_zh) ? zh : en;
+  document.getElementById("pjBody").innerHTML = mdToHtml(text);
+}
 
 function pjEscape(s) {
   return String(s == null ? "" : s)
@@ -55,7 +65,8 @@ function renderProject() {
     return '<span class="pj-tag">' + pjEscape(v) + "</span>";
   }));
   document.getElementById("pjTags").innerHTML = tags.join("");
-  document.getElementById("pjBody").innerHTML = mdToHtml(p.body || p.desc || "");
+  pjLang = "zh";
+  renderBody();
 
   const onlyEl = document.getElementById("pjOnlyCompat");
   const only = onlyEl ? onlyEl.checked : true;
@@ -93,6 +104,15 @@ function renderProject() {
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll(".pj-lang .chip").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      pjLang = btn.getAttribute("data-lang");
+      document.querySelectorAll(".pj-lang .chip").forEach(function (b) {
+        b.classList.toggle("active", b === btn);
+      });
+      renderBody();
+    });
+  });
   const close = document.getElementById("pjClose");
   if (close) close.addEventListener("click", function () {
     document.getElementById("projectModal").classList.add("hidden");
