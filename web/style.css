@@ -482,3 +482,6 @@ select, input[type=number], input[type=text] {
 
 .pj-lang { display: flex; gap: 6px; margin: 10px 0 6px; }
 .pj-lang .chip.active { border-color: var(--theme); color: var(--theme); background: #FFF3EC; }
+
+.direct-card { margin-top: 16px; padding: 16px 18px; border: 1px dashed #E4D2C6; border-radius: 14px; background: #FFFAF6; }
+.direct-card .tiny { white-space: pre-wrap; line-height: 1.9; }
