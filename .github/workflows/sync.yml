@@ -66,6 +66,13 @@ jobs:
             changzheng-launcher.zip
             version.json
 
+      - name: 同步到 Gitee（配了密钥才跑）
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: python gitee_release.py --create
+
       - name: 提交 version.json
         shell: pwsh
         run: |
