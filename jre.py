@@ -123,20 +123,43 @@ def download(major, base, progress=None):
     link = binary["package"]["link"]
     name = binary["package"]["name"]
     target = os.path.join(base, name)
-    say("下载 Java %d（%s）" % (major, name))
     tmp = target + ".part"
-    with _open(urllib.request.Request(link, headers={"User-Agent": UA}), 300) as resp, open(tmp, "wb") as handle:
-        total = int(resp.headers.get("Content-Length") or 0)
-        done = 0
-        while True:
-            chunk = resp.read(1 << 20)
-            if not chunk:
-                break
-            handle.write(chunk)
-            done += len(chunk)
-            if total:
-                say("Java %d：%d%%" % (major, int(done * 100 / total)))
-    os.replace(tmp, target)
+    mirrors = [
+        "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/%d/jre/x64/windows/%s" % (major, name),
+        "https://mirrors.ustc.edu.cn/adoptium/%d/jre/x64/windows/%s" % (major, name),
+        link,
+    ]
+    last_error = None
+    for idx, url in enumerate(mirrors, 1):
+        try:
+            say("下载 Java %d（线路 %d/%d）" % (major, idx, len(mirrors)))
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            with _open(req, 60) as resp, open(tmp, "wb") as handle:
+                total = int(resp.headers.get("Content-Length") or 0)
+                done = 0
+                while True:
+                    chunk = resp.read(1 << 20)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        say("Java %d：%d%%" % (major, int(done * 100 / total)))
+            if total and os.path.getsize(tmp) < total * 0.98:
+                raise RuntimeError("下了一半就断了")
+            os.replace(tmp, target)
+            last_error = None
+            break
+        except Exception as error:
+            last_error = error
+            try:
+                if os.path.isfile(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
+            continue
+    if last_error is not None:
+        raise RuntimeError("下载 Java 失败：%s" % last_error)
     folder = os.path.join(base, ("jre%d" % major))
     if os.path.isdir(folder):
         shutil.rmtree(folder, ignore_errors=True)
