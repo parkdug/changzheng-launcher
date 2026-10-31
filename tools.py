@@ -211,85 +211,33 @@ def crash_report(version_id):
             "size": len(text)}
 
 
-def check_update(current="1.9", url=""):
-    """检查更新：拿远端 version.json 和本地比。"""
-    if not url:
-        return {"ok": False, "error": "没配置更新地址（设置里 update_url）"}
-    try:
-        with _open(url) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        latest = str(data.get("version") or "")
-        return {"ok": True, "current": current, "latest": latest,
-                "url": data.get("download") or "", "notes": data.get("notes") or "",
-                "newer": latest != current}
-    except Exception as error:
-        return {"ok": False, "error": str(error)}
-
-
-def _modrinth_json(url, timeout=15):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def auto_fix(version_id, mc_version, loader, mods_dir, progress=None):
-    """小助手自动修：重复 mod 移走、补前置、内存不足调大。"""
-    say = progress or (lambda _t: None)
-    actions = []
-    report = crash_report(version_id)
-    hits = report.get("hits") or []
-
-    # 1) 重复的挪走（不删，留个备份目录）
-    scan = mod_scan(version_id)
-    dups = scan.get("duplicates") or []
-    if dups:
-        trash = os.path.join(mods_dir, "_duplicates")
-        os.makedirs(trash, exist_ok=True)
-        moved = 0
-        for group in dups:
-            keep = max(group, key=len)  # 名字长的一般带版本号
-            for jar in group:
-                if jar == keep:
-                    continue
-                try:
-                    os.replace(os.path.join(mods_dir, jar), os.path.join(trash, jar))
-                    moved += 1
-                except Exception:
-                    pass
-        if moved:
-            actions.append({"do": "移走重复 mod %d 个（在 mods/_duplicates）" % moved})
-
-    # 2) 补前置（只有日志明确说缺前置/依赖时才动手，免得乱装）
-    need_deps = any(("前置" in h) or ("依赖" in h) for h in hits)
-    matched = scan.get("matched") or [] if need_deps else []
-    installed = set()
-    for item in matched:
-        installed.add(item["project"])
-    missing = []
-    for item in matched[:20]:
-        try:
-            deps = _modrinth_json("https://api.modrinth.com/v2/project/%s/dependencies" % item["project"])
-        except Exception:
+def check_update(current="1.0.0", url=""):
+    """检查更新：多个源依次试，谁先给出结果用谁。"""
+    sources = [u for u in (url,
+                           "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@latest/version.json",
+                           "https://raw.githubusercontent.com/parkdug/changzheng-launcher/main/version.json",
+                           "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@main/version.json") if u]
+    seen = set()
+    errors = []
+    best = None
+    for src in sources:
+        if src in seen:
             continue
-        for dep in deps.get("projects") or []:
-            pid = dep.get("id")
-            if pid and pid not in installed:
-                missing.append({"id": pid, "title": dep.get("title") or pid})
-    fixed = []
-    for dep in missing[:6]:
+        seen.add(src)
         try:
-            path, error = assistant.install({"id": dep["id"], "title": dep["title"]}, "mod",
-                                            loader, mc_version, os.path.dirname(mods_dir))
-            if not error:
-                fixed.append(os.path.basename(path))
-        except Exception:
-            continue
-    if fixed:
-        actions.append({"do": "补了前置：" + "、".join(fixed)})
-
-    # 3) 内存不足
-    if any("内存" in h for h in hits):
-        actions.append({"do": "建议把内存调到 4096 MB 以上", "kind": "ram"})
-
-    return {"ok": True, "hits": hits, "actions": actions,
-            "report": {"source": report.get("source", ""), "causes": report.get("causes") or []}}
+            with _open(src) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            latest = str(data.get("version") or "")
+            if not latest:
+                continue
+            item = {"ok": True, "current": current, "latest": latest,
+                    "url": data.get("download") or "", "notes": data.get("notes") or "",
+                    "newer": latest != current, "source": src}
+            key = tuple(int(x) if x.isdigit() else 0 for x in latest.split("."))
+            if best is None or key > best[0]:
+                best = (key, item)
+        except Exception as error:
+            errors.append("%s: %s" % (src.split("/")[2], str(error)[:60]))
+    if best:
+        return best[1]
+    return {"ok": False, "error": "都没取到（" + "；".join(errors) + "）"}
