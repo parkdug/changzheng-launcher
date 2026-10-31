@@ -6,7 +6,27 @@ import os
 import re
 import shutil
 import socket
+import ssl
 import urllib.request
+
+try:
+    import certifi
+    _CA = certifi.where()
+except Exception:
+    _CA = None
+
+
+def _ctx():
+    return ssl.create_default_context(cafile=_CA) if _CA else ssl.create_default_context()
+
+
+def _open(url, timeout=12, headers=None):
+    """先用系统信任库，不行再用 certifi 兜底。"""
+    req = urllib.request.Request(url, headers=headers or {"User-Agent": UA})
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except Exception:
+        return urllib.request.urlopen(req, timeout=timeout, context=_ctx())
 
 import assistant
 import mc_core as core
@@ -196,8 +216,7 @@ def check_update(current="1.9", url=""):
     if not url:
         return {"ok": False, "error": "没配置更新地址（设置里 update_url）"}
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with _open(url) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         latest = str(data.get("version") or "")
         return {"ok": True, "current": current, "latest": latest,
