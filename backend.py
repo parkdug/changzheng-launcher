@@ -9,6 +9,7 @@ import server
 
 try:
     import selfupdate
+    selfupdate.cleanup_mei(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__)))
     if selfupdate.apply_pending(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))):
         try:
             server.VERSION = server._read_version()
