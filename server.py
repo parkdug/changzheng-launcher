@@ -39,7 +39,7 @@ BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HER
 CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
 
-VERSION = "1.9"
+VERSION = "1.0.0"
 PROGRESS = {"text": "", "percent": None, "ts": 0.0}
 
 FAQ = [
@@ -89,7 +89,7 @@ def load_config():
             "threads": 8, "speed_limit": 0, "auto_memory": False, "skin": "随机",
             "update_hint": False, "test_hint": False, "auto_chinese": True,
             "launcher_update": "有新版本时自动下载", "announce": "显示所有公告",
-            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": ""}
+            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://raw.githubusercontent.com/parkdug/changzheng-launcher/main/version.json"}
 
 
 def save_config(cfg):
@@ -119,7 +119,11 @@ def progress(msg):
         done, total = int(m.group(1)), int(m.group(2))
         if total > 0:
             PROGRESS["percent"] = min(100, int(done * 100 / total))
-    print(msg, flush=True)
+    try:
+        if sys.stdout is not None:
+            print(msg, flush=True)
+    except Exception:
+        pass
 
 
 def mc_version_of(ver_id):
@@ -926,6 +930,41 @@ class Handler(BaseHTTPRequestHandler):
 
             threading.Thread(target=pack, daemon=True).start()
             self._json({"ok": True, "path": target})
+            return
+        if parsed.path == "/api/download_update":
+            url = body.get("url") or ""
+            if not url:
+                self._json({"ok": False, "error": "没有下载地址"})
+                return
+
+            def grab():
+                STATE["busy"] = True
+                try:
+                    import urllib.request as _ur
+                    folder = os.path.join(BASE, "updates")
+                    os.makedirs(folder, exist_ok=True)
+                    name = os.path.basename(url.split("?")[0]) or "update.zip"
+                    target = os.path.join(folder, name)
+                    req2 = _ur.Request(url, headers={"User-Agent": "ChangzhengLauncher"})
+                    with _ur.urlopen(req2, timeout=120) as resp, open(target, "wb") as handle:
+                        total = int(resp.headers.get("Content-Length") or 0)
+                        done = 0
+                        while True:
+                            chunk = resp.read(1 << 20)
+                            if not chunk:
+                                break
+                            handle.write(chunk)
+                            done += len(chunk)
+                            if total:
+                                progress("更新包 %d%%" % int(done * 100 / total))
+                    progress("更新包下好了（100/100）：%s" % target)
+                    STATE["update_file"] = target
+                except Exception as error:
+                    progress("更新包下载失败：%s" % error)
+                STATE["busy"] = False
+
+            threading.Thread(target=grab, daemon=True).start()
+            self._json({"ok": True})
             return
         if parsed.path == "/api/share":
             import zipfile as _zip
