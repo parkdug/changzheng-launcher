@@ -217,3 +217,41 @@ def dependencies(project_id, limit=6):
         out.append({"id": item.get("id"), "slug": item.get("slug"), "title": item.get("title"),
                     "desc": item.get("description") or "", "downloads": 0, "source": "modrinth"})
     return out
+
+
+def project_detail(project_id, mc_version="", limit=25):
+    """项目详情 + 版本列表，给“点开看介绍”用。"""
+    project = _get("https://api.modrinth.com/v2/project/" + project_id)
+    versions = _get("https://api.modrinth.com/v2/project/%s/version" % project_id)
+    rows = []
+    for item in versions[:limit]:
+        files = item.get("files") or []
+        primary = next((f for f in files if f.get("primary")), files[0] if files else {})
+        rows.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "number": item.get("version_number"),
+            "mc": item.get("game_versions") or [],
+            "loaders": item.get("loaders") or [],
+            "date": (item.get("date_published") or "")[:10],
+            "downloads": item.get("downloads") or 0,
+            "url": primary.get("url"),
+            "filename": primary.get("filename"),
+            "compatible": (not mc_version) or (mc_version in (item.get("game_versions") or [])),
+        })
+    rows.sort(key=lambda r: (not r["compatible"], r["date"]), reverse=False)
+    return {
+        "id": project.get("id"),
+        "slug": project.get("slug"),
+        "title": project.get("title"),
+        "desc": project.get("description"),
+        "body": project.get("body") or "",
+        "icon": project.get("icon_url"),
+        "downloads": project.get("downloads") or 0,
+        "followers": project.get("followers") or 0,
+        "categories": project.get("categories") or [],
+        "loaders": project.get("loaders") or [],
+        "mc": project.get("game_versions") or [],
+        "updated": (project.get("updated") or "")[:10],
+        "versions": rows,
+    }
