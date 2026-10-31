@@ -1411,7 +1411,11 @@ def apply_update_auto(zip_path, version_text):
 def main(open_browser_tab=True):
     server = _bind_any(PORT)
     url = "http://127.0.0.1:%d/" % PORT
-    print("长征启动器服务：%s" % url, flush=True)
+    try:
+        if sys.stdout is not None:
+            print("长征启动器服务：%s" % url, flush=True)
+    except Exception:
+        pass
 
     def open_browser():
         import time
