@@ -39,7 +39,7 @@ BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HER
 CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 PROGRESS = {"text": "", "percent": None, "ts": 0.0}
 
 FAQ = [
@@ -206,6 +206,10 @@ class Handler(BaseHTTPRequestHandler):
         if cfg.get("mc_dir"):
             core.MC_DIR = cfg["mc_dir"]
         if path == "/api/bootstrap":
+            try:
+                os.makedirs(core.MC_DIR, exist_ok=True)
+            except Exception:
+                pass
             self._json({
                 "ok": True,
                 "versions": versions_payload(),
