@@ -89,7 +89,7 @@ def load_config():
             "threads": 8, "speed_limit": 0, "auto_memory": False, "skin": "随机",
             "update_hint": False, "test_hint": False, "auto_chinese": True,
             "launcher_update": "有新版本时自动下载", "announce": "显示所有公告",
-            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@main/version.json"}
+            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@latest/version.json"}
 
 
 def save_config(cfg):
