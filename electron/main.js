@@ -8,8 +8,9 @@ const net = require("net");
 const fs = require("fs");
 
 const ROOT = path.resolve(__dirname, "..");
-const ENGINE = path.join(ROOT, "长征引擎.exe");
-const PORT_FILE = path.join(ROOT, "port.txt");
+const ENGINE_NEW = path.join(ROOT, "长征引擎", "长征引擎.exe");
+const ENGINE = fs.existsSync(ENGINE_NEW) ? ENGINE_NEW : path.join(ROOT, "长征引擎.exe");
+const PORT_FILES = [path.join(ROOT, "port.txt"), path.join(ROOT, "长征引擎", "port.txt")];
 const BOOT = path.join(ROOT, "web", "boot.html");
 const LOG = path.join(__dirname, "app.log");
 
@@ -24,6 +25,7 @@ try {
 } catch (e) {}
 
 let engine = null;
+let restarts = 0;
 let win = null;
 
 function waitPort(port, timeout) {
@@ -43,10 +45,12 @@ function waitPort(port, timeout) {
 }
 
 function readPort() {
-  try {
-    const n = parseInt(fs.readFileSync(PORT_FILE, "utf8").trim(), 10);
-    if (n > 0) return n;
-  } catch (e) {}
+  for (const f of PORT_FILES) {
+    try {
+      const n = parseInt(fs.readFileSync(f, "utf8").trim(), 10);
+      if (n > 0) return n;
+    } catch (e) {}
+  }
   return 8765;
 }
 
@@ -56,9 +60,21 @@ function startEngine() {
     return;
   }
   try {
-    engine = spawn(ENGINE, [], { cwd: ROOT, windowsHide: true, detached: false });
+    engine = spawn(ENGINE, [], {
+      cwd: ROOT,
+      windowsHide: true,
+      detached: false,
+      env: Object.assign({}, process.env, { CZ_BASE: ROOT }),
+    });
     log("引擎启动 pid=" + engine.pid);
-    engine.on("exit", function (code) { log("引擎退出 " + code); engine = null; });
+    engine.on("exit", function (code) {
+      log("引擎退出 " + code + "，尝试重启");
+      engine = null;
+      if (!app.isQuitting && restarts < 6) {
+        restarts += 1;
+        setTimeout(function () { startEngine(); scheduleLoad(2500); }, 1200);
+      }
+    });
   } catch (e) {
     log("引擎起不来: " + e.message);
   }
@@ -108,17 +124,24 @@ app.whenReady().then(async function () {
     return { action: "deny" };
   });
 
-  win.webContents.on("did-fail-load", function () {
-    log("加载失败，切到引导页");
-    setTimeout(openBoot, 300);
+  win.webContents.on("did-fail-load", function (event, code, desc, url, isMainFrame) {
+    if (!isMainFrame) return;
+    log("加载失败 " + code + " " + desc + "，3 秒后重试");
+    setTimeout(scheduleLoad, 3000);
   });
 
-  if (ok) {
-    win.loadURL("http://127.0.0.1:" + port + "/");
-  } else {
-    openBoot();
-  }
+  scheduleLoad();
 });
+
+function scheduleLoad() {
+  if (!win || win.isDestroyed()) return;
+  const port = readPort();
+  if (!fs.existsSync(ENGINE) || !engine) startEngine();
+  win.loadURL("http://127.0.0.1:" + port + "/").catch(function () {
+    log("加载 catch，稍后重试");
+    setTimeout(scheduleLoad, 2000);
+  });
+}
 
 app.on("window-all-closed", function () { stopEngine(); app.quit(); });
 app.on("before-quit", stopEngine);
