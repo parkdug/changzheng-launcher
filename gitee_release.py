@@ -95,8 +95,8 @@ def update_version_json(owner, repo, tag, filename, version):
 
 def main():
     if not TOKEN:
-        print("先把 GITEE_TOKEN 设上（Gitee → 设置 → 私人令牌）")
-        return 1
+        print("没配 GITEE_TOKEN，跳过 Gitee 发布")
+        return 0
     status, info = me()
     if status != 200:
         print("token 不对：", info)
