@@ -48,14 +48,14 @@ def import_changzheng(path, version_id, mc_dir, progress=None):
             info = json.loads(zf.read("manifest.json").decode("utf-8", "replace"))
         except Exception:
             info = {}
-        for name in names:
-            if name.startswith("mods/") and name.endswith(".jar"):
+        jars = [n for n in names if n.startswith("mods/") and n.endswith(".jar")]
+        total_jars = len(jars)
+        for name in jars:
                 target = os.path.join(mods_dir, os.path.basename(name))
                 with zf.open(name) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
                 count += 1
-                if count % 10 == 0:
-                    say("导入 mod %d" % count)
+                say("导入 mod %d/%d" % (count, total_jars))
         if info.get("include_game", True):
             for name in names:
                 if name.startswith(("config/", "shaderpacks/", "resourcepacks/", "defaultconfigs/", "kubejs/")):
