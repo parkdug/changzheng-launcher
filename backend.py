@@ -24,5 +24,31 @@ def main():
     server.main(False)
 
 
+def apply_update_mode():
+    """Electron 版专用：等老进程退出→覆盖→重新拉起外壳。"""
+    import subprocess
+    import time
+    base = os.environ.get("CZ_BASE") or os.path.dirname(sys.executable)
+    time.sleep(5)
+    try:
+        import selfupdate
+        selfupdate.apply_pending(base)
+    except Exception:
+        pass
+    electron = os.path.join(base, "electron", "node_modules", "electron", "dist", "electron.exe")
+    exe = os.path.join(base, "长征启动器.exe")
+    try:
+        if os.path.isfile(exe):
+            subprocess.Popen([exe], cwd=base, close_fds=True, creationflags=0x08000000)
+        elif os.path.isfile(electron):
+            subprocess.Popen([electron, os.path.join(base, "electron")], cwd=base,
+                             close_fds=True, creationflags=0x08000000)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    if "--apply-update" in sys.argv:
+        apply_update_mode()
+        raise SystemExit(0)
     main()
