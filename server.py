@@ -1329,12 +1329,18 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": False, "error": "unknown"}, 404)
 
 
+class MainServer(ThreadingHTTPServer):
+    """端口被占就老老实实失败，别和老实例挤在同一个端口上（否则页面显示的还是旧服务）。"""
+    allow_reuse_address = False
+    allow_reuse_port = False
+
+
 def _bind_any(preferred=8765, tries=12):
     """端口被占就往后找，别让“已经有一个在跑”变成打不开网页。"""
     global PORT, STATE
     for port in range(preferred, preferred + tries):
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            httpd = MainServer(("127.0.0.1", port), Handler)
             PORT = port
             STATE["port"] = port
             try:
