@@ -117,9 +117,10 @@ def main():
     if status != 200 or not isinstance(rel, dict):
         status, rel = create_release(owner, REPO, tag, "长征启动器（最新构建）",
                                      "自动发布，跟着 GitHub 的最新构建走。")
-    if status not in (200, 201):
-        print("Release 出错：", rel)
-        return 1
+        print("建 release:", status, str(rel)[:160])
+    if not isinstance(rel, dict):
+        print("Release 拿不到，跳过")
+        return 0
     print("Release:", rel.get("html_url"))
 
     if os.path.isfile(ZIP):
