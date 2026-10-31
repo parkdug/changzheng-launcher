@@ -228,6 +228,7 @@ async function bootInner() {
   if (off) { document.querySelectorAll("#sourceSeg button").forEach((b) => b.classList.toggle("on", b === off)); }
   loadManifest();
   refreshNet();
+  syncUpdateButton();
 }
 
 function applyProfile(p) {
@@ -770,6 +771,7 @@ $("#crashBtn")?.addEventListener("click", async () => {
 });
 
 $("#reloadBtn")?.addEventListener("click", () => location.reload(true));
+
 $("#checkUpdateBtn")?.addEventListener("click", async () => {
   const btn = $("#checkUpdateBtn");
   if (btn) { btn.disabled = true; btn.textContent = "更新中…"; }
@@ -779,7 +781,13 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
   if (url) await api("/api/config", { update_url: url.trim() });
   const r = await api("/api/check_update");
   if (!r.ok) { toast("检查失败：" + r.error, 5000); done(); return; }
-  if (!r.newer) { toast("已经是最新版（" + r.current + "）", 4000); done(); return; }
+  if (!r.newer) {
+    toast("已经是最新版（" + r.current + "）", 4000);
+    const btn2 = $("#checkUpdateBtn");
+    if (btn2) { btn2.textContent = "已更新到最新版"; btn2.disabled = true; btn2.classList.add("is-latest"); }
+    done();
+    return;
+  }
   toast("有新版 " + r.latest + "，开始下载…", 4000);
   await api("/api/download_update", { url: r.url });
   const t0 = Date.now();
@@ -803,6 +811,23 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
 });
 
 $("#reloadBtn")?.addEventListener("click", () => location.reload(true));
+async function syncUpdateButton() {
+  const btn = $("#checkUpdateBtn");
+  if (!btn) return;
+  try {
+    const r = await api("/api/check_update");
+    if (r.ok && r.newer === false) {
+      btn.textContent = "已更新到最新版";
+      btn.disabled = true;
+      btn.classList.add("is-latest");
+    } else {
+      btn.textContent = "一键更新";
+      btn.disabled = false;
+      btn.classList.remove("is-latest");
+    }
+  } catch (e) {}
+}
+
 $("#checkUpdateBtn")?.addEventListener("click", async () => {
   const btn = $("#checkUpdateBtn");
   if (btn) { btn.disabled = true; btn.textContent = "检查中…"; }
@@ -812,7 +837,13 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
   await api("/api/config", { update_url: url });
   const r = await api("/api/check_update");
   if (!r.ok) { toast("检查失败：" + r.error, 5000); done(); return; }
-  if (!r.newer) { toast("已经是最新版（" + r.current + "）", 4000); done(); return; }
+  if (!r.newer) {
+    toast("已经是最新版（" + r.current + "）", 4000);
+    const btn2 = $("#checkUpdateBtn");
+    if (btn2) { btn2.textContent = "已更新到最新版"; btn2.disabled = true; btn2.classList.add("is-latest"); }
+    done();
+    return;
+  }
   toast("有新版本 " + r.latest + "，开始下载…", 4000);
   if (r.url) {
     await api("/api/download_update", { url: r.url });
