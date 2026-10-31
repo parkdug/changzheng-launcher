@@ -392,6 +392,41 @@ async function refreshNet() {
     "\n开服状态：" + (r.online ? "运行中" : "未启动") +
     "\n局域网：" + r.lan + ":25565";
 }
+$("#directCheck")?.addEventListener("click", async () => {
+  const box = $("#directInfo");
+  box.textContent = "正在看…";
+  const r = await api("/api/direct/net");
+  if (!r.ok) { box.textContent = "检测失败：" + r.error; return; }
+  const v6 = r.public_v6 || (r.v6 && r.v6[0]) || "";
+  const lines = [];
+  if (v6) {
+    lines.push("你家有公网 IPv6：[" + v6 + "]:25565");
+    lines.push("朋友在游戏里「添加服务器」填这个就能进，不用任何穿透。");
+  } else {
+    lines.push("没检测到公网 IPv6（运营商没给，或者光猫那边没开）。");
+  }
+  lines.push("局域网地址：" + ((r.v4 && r.v4[0]) || "未知") + ":25565");
+  const tools = r.tools || {};
+  const have = Object.keys(tools).filter((k) => tools[k]);
+  if (have.length) {
+    lines.push("检测到虚拟局域网工具：" + have.join(" / ") + "，用它的 IP 也能直接连。");
+  } else if (!v6) {
+    lines.push("没有 v6 又不想穿透，就装 Tailscale 或 Radmin VPN，两台加进同一个网络，连它给的 IP。");
+  }
+  lines.push("别忘了先开放防火墙，别人才能连进来。");
+  box.innerHTML = lines.join("<br>");
+});
+$("#directFirewall")?.addEventListener("click", async () => {
+  const r = await api("/api/direct/firewall", {});
+  if (r.ok) { toast("防火墙规则加好了"); return; }
+  if (r.bat) {
+    toast("需要管理员权限：给你生成了「开放防火墙.bat」，右键以管理员身份运行一次就行", 7000);
+    await api("/api/reveal", { path: r.bat });
+  } else {
+    toast("加规则失败，可能要管理员权限", 5000);
+  }
+});
+
 $("#netPrepare")?.addEventListener("click", async () => {
   const r = await api("/api/server/prepare", { version: state.chosen, online_mode: $("#onlineMode").checked });
   toast(r.ok ? "开服配置写好" : "失败：" + r.error); refreshNet();
