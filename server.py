@@ -81,11 +81,17 @@ STATE_CONTEXT = {"query": "", "kind": "", "mc": "", "loader": "", "offset": 0, "
 FOLLOW_UP = ("再", "还", "更多", "几个", "推荐", "其他", "别的", "换一批", "继续", "再来")
 
 
+SKIN_DIR = os.path.join(BASE, "skins")
+
+
 def load_config():
     if os.path.isfile(CONFIG):
         try:
             with open(CONFIG, encoding="utf-8") as handle:
-                return json.load(handle)
+                cfg = json.load(handle)
+            if str(cfg.get("custom_info") or "").strip() in ("", "PCL"):
+                cfg["custom_info"] = "长征启动器"
+            return cfg
         except Exception:
             pass
     return {"client_id": "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb", "ram_mb": 4096,
@@ -509,6 +515,32 @@ class Handler(BaseHTTPRequestHandler):
                     info["tools"][name] = False
             self._json(info)
             return
+        if path == "/api/skins":
+            os.makedirs(SKIN_DIR, exist_ok=True)
+            cfg_now = load_config()
+            active = cfg_now.get("skin_file") or ""
+            items = []
+            for name in sorted(os.listdir(SKIN_DIR)):
+                if name.lower().endswith(".png"):
+                    full = os.path.join(SKIN_DIR, name)
+                    items.append({"name": name, "size": os.path.getsize(full),
+                                  "active": name == active})
+            self._json({"ok": True, "dir": SKIN_DIR, "items": items, "active": active})
+            return
+        if path == "/api/skin/file":
+            name = os.path.basename((query.get("name") or [""])[0])
+            target = os.path.join(SKIN_DIR, name)
+            if os.path.isfile(target):
+                with open(target, "rb") as handle:
+                    data = handle.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_error(404)
+            return
         if path == "/api/import/result":
             self._json({"ok": True, "result": STATE.get("last_import") or None,
                         "busy": STATE.get("busy", False)})
@@ -702,6 +734,62 @@ class Handler(BaseHTTPRequestHandler):
         if cfg.get("mc_dir"):
             core.MC_DIR = cfg["mc_dir"]
 
+        if parsed.path == "/api/skin/upload":
+            name = os.path.basename(urllib.parse.unquote(self.headers.get("X-Filename") or "skin.png"))
+            if not name.lower().endswith(".png"):
+                name += ".png"
+            os.makedirs(SKIN_DIR, exist_ok=True)
+            target = os.path.join(SKIN_DIR, name)
+            try:
+                data = getattr(self, "_raw", b"") or b""
+                if len(data) < 100:
+                    self._json({"ok": False, "error": "图太小，像是空文件"})
+                    return
+                with open(target, "wb") as handle:
+                    handle.write(data)
+                self._json({"ok": True, "name": name, "size": len(data)})
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
+            return
+        if parsed.path == "/api/skin/select":
+            name = os.path.basename(body.get("name") or "")
+            cfg_now = load_config()
+            cfg_now["skin_file"] = name
+            save_config(cfg_now)
+            self._json({"ok": True})
+            return
+        if parsed.path == "/api/skin/delete":
+            name = os.path.basename(body.get("name") or "")
+            try:
+                trash = os.path.join(SKIN_DIR, "_trash")
+                os.makedirs(trash, exist_ok=True)
+                os.replace(os.path.join(SKIN_DIR, name), os.path.join(trash, name))
+                cfg_now = load_config()
+                if cfg_now.get("skin_file") == name:
+                    cfg_now["skin_file"] = ""
+                    save_config(cfg_now)
+                self._json({"ok": True})
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
+            return
+        if parsed.path == "/api/skin/installmod":
+            ver = body.get("version") or STATE.get("chosen")
+            loader = loader_of(ver) if ver else "fabric"
+            try:
+                hit = mods_api.search_project("customskinloader", "mod", mc_version_of(ver), [loader], 1)
+                if not hit:
+                    self._json({"ok": False, "error": "没找到 CustomSkinLoader"})
+                    return
+                path, error = mods_api.install_project(
+                    hit[0], "mod", mc_version_of(ver), [loader],
+                    os.path.join(core.MC_DIR, "versions", ver, "mods"))
+                if error:
+                    self._json({"ok": False, "error": error})
+                else:
+                    self._json({"ok": True, "file": os.path.basename(path)})
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
+            return
         if parsed.path == "/api/direct/firewall":
             try:
                 self._json(fw.open_port(BASE))
@@ -1219,6 +1307,15 @@ class Handler(BaseHTTPRequestHandler):
                 isolate = (cfg.get("isolation") or "隔离所有版本") != "不隔离"
                 game_dir = os.path.join(core.MC_DIR, "versions", ver) if isolate else core.MC_DIR
                 os.makedirs(game_dir, exist_ok=True)
+                skin_name = cfg.get("skin_file") or ""
+                if skin_name:
+                    try:
+                        import shutil as _sh2
+                        src_skin = os.path.join(SKIN_DIR, skin_name)
+                        if os.path.isfile(src_skin):
+                            _sh2.copyfile(src_skin, os.path.join(game_dir, "skin.png"))
+                    except Exception:
+                        pass
                 if cfg.get("auto_chinese", True):
                     options = os.path.join(game_dir, "options.txt")
                     try:
