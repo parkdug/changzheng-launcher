@@ -1223,16 +1223,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/download_update":
             url = body.get("url") or ""
-            if not url:
+            parts = body.get("parts") or []
+            if not url and not parts:
                 self._json({"ok": False, "error": "没有下载地址"})
                 return
 
             def grab():
                 STATE["busy"] = True
                 folder = os.path.join(BASE, "updates")
-                name = os.path.basename(url.split("?")[0]) or "update.zip"
+                name = os.path.basename((url or (parts[0] if parts else "")).split("?")[0]) or "update.zip"
+                if name.endswith(".001"):
+                    name = name[:-4] or "update.zip"
                 target = os.path.join(folder, name)
-                path, error = updater.download(url, target, progress)
+                path, error = updater.download(url, target, progress, parts=body.get("parts") or None)
                 if path:
                     STATE["update_file"] = path
                 else:
@@ -1261,6 +1264,8 @@ class Handler(BaseHTTPRequestHandler):
                     # 不再用 bat：先启动一个新的自己，新进程启动时会把 updates/new 覆盖进来
                     import subprocess as _sp4
                     exe = os.path.join(BASE, "长征启动器.exe")
+                    if not os.path.isfile(exe):
+                        exe = os.path.join(BASE, "长征引擎", "长征引擎.exe")
                     try:
                         if os.path.isfile(exe):
                             _sp4.Popen([exe, "--apply-update"], cwd=BASE,
