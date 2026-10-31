@@ -150,6 +150,17 @@ async function bootInner() {
   $("#statDir").textContent = d.mcDir || "";
   $("#statJava").textContent = d.java || "未找到";
   $("#javaLine").textContent = "Java " + (d.java ? d.java.split("\\").pop() : "未找到");
+  if (!d.java) {
+    const line = document.getElementById("javaLine");
+    if (line) {
+      line.innerHTML = 'Java 未找到（点这里装）';
+      line.style.color = "#C2352F";
+      line.style.cursor = "pointer";
+      line.addEventListener("click", () => {
+        window.open("https://adoptium.net/temurin/releases/?version=17&os=windows", "_blank");
+      });
+    }
+  }
   renderSettings();
   if (d.profile) applyProfile(d.profile);
   syncChosen();
@@ -178,6 +189,17 @@ function syncChosen() {
 function renderMyVersions() {
   const box = $("#myVersions");
   box.innerHTML = "";
+  if (!state.versions.length) {
+    box.innerHTML = '<div class="empty-hint"><b>还没有装任何版本</b>' +
+      '<p>点「下载」挑一个装上就能玩。第一次用建议先装个正式版，' +
+      '比如最新的正式版；想玩模组再装 Fabric 或 Forge。</p>' +
+      '<button class="btn primary" id="goDownload">去下载页</button></div>';
+    $("#goDownload")?.addEventListener("click", () => {
+      const btn = document.querySelector('.rail-btn[data-page="download"]');
+      if (btn) btn.click();
+    });
+    return;
+  }
   const groups = {};
   state.versions.forEach((v) => { (groups[v.mc] = groups[v.mc] || []).push(v); });
   Object.keys(groups).sort().reverse().forEach((mc) => {
