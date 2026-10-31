@@ -232,3 +232,50 @@ if __name__ == "__main__":
     for name in ("Sodium", "Iris Shaders", "Better Archeology", "Entity Culling",
                  "Waystones", "Ars Nouveau", "More Culling", "Fabulously Optimized"):
         print(name, "->", lookup(name))
+
+
+def _my_translate(chunk, timeout=12):
+    url = ("https://api.mymemory.translated.net/get?q=" + urllib.parse.quote(chunk[:480])
+           + "&langpair=en|zh-CN")
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8", "replace"))
+    return ((data.get("responseData") or {}).get("translatedText") or "").strip()
+
+
+def translate_long(text, max_chars=1200, timeout=12):
+    """整段英文翻中文，分段请求，带缓存。"""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    raw = raw[:max_chars]
+    cache = _load()
+    key = "body:" + str(abs(hash(raw)))
+    with _lock:
+        if cache.get(key):
+            return cache[key]
+    chunks = []
+    buffer = ""
+    for sentence in re.split(r"(?<=[.!?])\s+", raw):
+        if len(buffer) + len(sentence) > 420:
+            if buffer:
+                chunks.append(buffer)
+            buffer = sentence
+        else:
+            buffer = (buffer + " " + sentence).strip()
+    if buffer:
+        chunks.append(buffer)
+    out = []
+    for chunk in chunks[:6]:
+        try:
+            part = _my_translate(chunk, timeout)
+        except Exception:
+            part = ""
+        if part:
+            out.append(part)
+    result = "\n".join(out)
+    if result:
+        with _lock:
+            cache[key] = result
+            _save(cache)
+    return result
