@@ -14,6 +14,9 @@ def apply_pending(base):
             src = os.path.join(root, name)
             rel = os.path.relpath(src, stage)
             dst = os.path.join(base, rel)
+            base_abs = os.path.abspath(base)
+            if not os.path.abspath(dst).startswith(base_abs + os.sep):
+                continue
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             try:
                 shutil.copyfile(src, dst)
