@@ -479,3 +479,6 @@ select, input[type=number], input[type=text] {
 
 .mod-vers { font-size: 11px; color: #A0918A; margin-top: 4px; }
 .mod-card { cursor: pointer; }
+
+.pj-lang { display: flex; gap: 6px; margin: 10px 0 6px; }
+.pj-lang .chip.active { border-color: var(--theme); color: var(--theme); background: #FFF3EC; }
