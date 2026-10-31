@@ -112,4 +112,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:  # 把异常写进 launcher.log，窗口版看不到控制台
+        import traceback
+        log_line("崩溃：%s" % error)
+        log_line(traceback.format_exc())
+        raise
