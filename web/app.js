@@ -789,7 +789,7 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
     return;
   }
   toast("有新版 " + r.latest + "，开始下载…", 4000);
-  await api("/api/download_update", { url: r.url });
+  await api("/api/download_update", { url: r.url, parts: r.parts || [] });
   const t0 = Date.now();
   while (Date.now() - t0 < 600000) {
     await new Promise((res) => setTimeout(res, 2000));
@@ -846,7 +846,7 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
   }
   toast("有新版本 " + r.latest + "，开始下载…", 4000);
   if (r.url) {
-    await api("/api/download_update", { url: r.url });
+    await api("/api/download_update", { url: r.url, parts: r.parts || [] });
     const t0 = Date.now();
     while (Date.now() - t0 < 600000) {
       await new Promise((res) => setTimeout(res, 3000));
