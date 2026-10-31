@@ -38,6 +38,7 @@ jobs:
           Compress-Archive -Path out\* -DestinationPath changzheng-launcher.zip -Force
 
       - name: 发到 Gitee
+        continue-on-error: true
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           BUILD_NUMBER: ${{ github.run_number }}
