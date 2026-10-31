@@ -89,7 +89,7 @@ def load_config():
             "threads": 8, "speed_limit": 0, "auto_memory": False, "skin": "随机",
             "update_hint": False, "test_hint": False, "auto_chinese": True,
             "launcher_update": "有新版本时自动下载", "announce": "显示所有公告",
-            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://raw.githubusercontent.com/parkdug/changzheng-launcher/main/version.json"}
+            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@main/version.json"}
 
 
 def save_config(cfg):
@@ -946,7 +946,13 @@ class Handler(BaseHTTPRequestHandler):
                     name = os.path.basename(url.split("?")[0]) or "update.zip"
                     target = os.path.join(folder, name)
                     req2 = _ur.Request(url, headers={"User-Agent": "ChangzhengLauncher"})
-                    with _ur.urlopen(req2, timeout=120) as resp, open(target, "wb") as handle:
+                    try:
+                        resp = _ur.urlopen(req2, timeout=120)
+                    except Exception:
+                        import ssl as _ssl
+                        resp = _ur.urlopen(req2, timeout=120, context=_ssl.create_default_context(
+                            cafile=certifi.where()))
+                    with resp as resp, open(target, "wb") as handle:
                         total = int(resp.headers.get("Content-Length") or 0)
                         done = 0
                         while True:
