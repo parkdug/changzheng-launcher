@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+dist/
+build/
+*.spec
+node_modules/
+.web-data/
+uploads/
+exports/
+my-mods/
+translations.json
+client-errors.log
+app.log
+.run/
+*.mp4
+*.zip
