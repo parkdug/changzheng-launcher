@@ -93,17 +93,54 @@ def check(current="1.0.0", extra=""):
 
 
 MIRRORS = (
-    "",
-    "https://ghproxy.net/",
     "https://gh-proxy.com/",
+    "https://ghproxy.net/",
     "https://ghfast.top/",
+    "",
 )
 
 
+def remote_size(url, timeout=10):
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return int(resp.headers.get("Content-Length") or 0)
+    except Exception:
+        return 0
+
+
 def download(url, target, progress=None, tries=4):
-    """下载更新包：镜像轮换 + Range 续传。"""
+    """下载更新包：镜像轮换 + Range 续传；已经下全了就直接用。"""
     say = progress or (lambda _t: None)
     os.makedirs(os.path.dirname(target), exist_ok=True)
+    want = 0
+    for prefix in MIRRORS:
+        want = remote_size((prefix + url) if prefix else url)
+        if want:
+            break
+    def valid(path):
+        try:
+            import zipfile
+            with zipfile.ZipFile(path) as zf:
+                return zf.testzip() is None
+        except Exception:
+            return False
+
+    if want and os.path.isfile(target):
+        have = os.path.getsize(target)
+        if have == want:
+            if valid(target):
+                say("更新包下好了（100/100）")
+                return target, ""
+            try:
+                os.remove(target)
+            except Exception:
+                pass
+        if have > want:
+            try:
+                os.remove(target)
+            except Exception:
+                pass
     last = None
     for attempt in range(tries):
         for prefix in MIRRORS:
@@ -135,6 +172,8 @@ def download(url, target, progress=None, tries=4):
                 size = os.path.getsize(target)
                 if total and size < total * 0.99:
                     raise RuntimeError("没下完")
+                if not valid(target):
+                    raise RuntimeError("包坏了")
                 say("更新包下好了（100/100）")
                 return target, ""
             except Exception as error:
