@@ -91,7 +91,14 @@
                 <button data-source="bmclapi" class="on">BMCLAPI</button>
                 <button data-source="official">官方</button>
               </div>
-              <div class="seg" id="filterSeg">
+              <select id="loaderSel" class="mm-select" title="顺便装加载器">
+            <option value="">不装加载器</option>
+            <option value="fabric">Fabric</option>
+            <option value="forge">Forge</option>
+            <option value="neoforge">NeoForge</option>
+          </select>
+          <label class="mm-check" title="顺便下常用前置模组"><input type="checkbox" id="prereqChk">常用前置</label>
+          <div class="seg" id="filterSeg">
                 <button data-filter="全部" class="on">全部</button>
                 <button data-filter="正式版">正式版</button>
                 <button data-filter="快照">快照</button>
