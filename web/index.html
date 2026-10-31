@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>长征启动器</title>
+<link rel="stylesheet" href="/static/style.css?v=110">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span class="star">★</span><span>长征</span></div>
+    <nav>
+      <button class="rail-btn active" data-page="start"><i>▶</i>启动</button>
+      <button class="rail-btn" data-page="download"><i>⤓</i>下载</button>
+      <button class="rail-btn" data-page="net"><i>⇄</i>联机</button>
+      <button class="rail-btn" data-page="ask"><i>✦</i>小助手</button>
+      <button class="rail-btn" data-page="settings"><i>◎</i>设置</button>
+      <button class="rail-btn" data-page="guide"><i>?</i>教程</button>
+      <button class="rail-btn" data-page="files"><i>▤</i>存档与截图</button>
+    </nav>
+    <div class="rail-foot">
+      <div id="account" class="account">未登录</div>
+      <div class="tiny" id="javaLine">Java …</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <section id="page-start" class="page active">
+      <div class="hero card">
+        <div class="avatar">★</div>
+        <div class="hero-text">
+          <div class="hero-name" id="playerName">未登录</div>
+          <div class="hero-sub" id="playerSub">点下面按钮登录，或者用离线账号</div>
+        </div>
+        <div class="hero-actions">
+          <button class="btn primary" id="loginBtn">微软登录</button>
+          <button class="btn ghost" id="offlineBtn">离线账号</button>
+        </div>
+      </div>
+
+      <div class="play-card card" id="playCard">
+        <div>
+          <div class="play-title">启动游戏</div>
+          <div class="play-ver" id="playVersion">未选择版本</div>
+        </div>
+        <button class="btn play" id="playBtn">开始</button>
+      </div>
+
+      <div class="quick-row">
+        <button class="btn ghost" id="exportBtn">导出为整合包</button>
+        <button class="btn ghost" id="importBtn">导入整合包</button>
+        <input type="file" id="importFile" accept=".zip,.mrpack" style="display:none">
+      </div>
+
+      <div class="quick-row">
+        <button class="btn ghost" id="healthBtn">环境体检</button>
+        <button class="btn ghost" id="modsBtn" onclick="openMods && openMods()">mod 管理</button>
+        <button class="btn ghost" id="modscanBtn">mod 体检</button>
+      </div>
+
+      <div class="grid-info">
+        <div class="card mini"><div class="k">已装版本</div><div class="v" id="statVersions">0</div></div>
+        <div class="card mini"><div class="k">游戏目录</div><div class="v small" id="statDir">…</div></div>
+        <div class="card mini"><div class="k">Java</div><div class="v small" id="statJava">…</div></div>
+      </div>
+
+      <div class="card my-versions">
+        <div class="sec-title">我的版本<span class="hint">按游戏版本分组</span></div>
+        <div id="myVersions"></div>
+      </div>
+    </section>
+
+    <section id="page-download" class="page">
+      <div class="dl-layout">
+        <div class="dl-cats">
+          <div class="cat-title">原版</div>
+          <button class="cat active" data-kind="vanilla"><span class="dot v"></span>原版游戏</button>
+          <div class="cat-title">社区资源</div>
+          <button class="cat" data-kind="mod"><span class="dot m"></span>Mod</button>
+          <button class="cat" data-kind="modpack"><span class="dot p"></span>整合包</button>
+          <button class="cat" data-kind="datapack"><span class="dot d"></span>数据包</button>
+          <button class="cat" data-kind="resourcepack"><span class="dot r"></span>资源包</button>
+          <button class="cat" data-kind="shader"><span class="dot s"></span>光影包</button>
+          <button class="cat" data-kind="plugin"><span class="dot g"></span>服务端插件</button>
+        </div>
+
+        <div class="dl-body">
+          <div id="vanillaPanel" class="panel active">
+            <div class="toolbar">
+              <div class="seg" id="sourceSeg">
+                <button data-source="bmclapi" class="on">BMCLAPI</button>
+                <button data-source="official">官方</button>
+              </div>
+              <div class="seg" id="filterSeg">
+                <button data-filter="全部" class="on">全部</button>
+                <button data-filter="正式版">正式版</button>
+                <button data-filter="快照">快照</button>
+                <button data-filter="远古">远古</button>
+              </div>
+              <span class="hint" id="versionHint">加载中…</span>
+            </div>
+            <div id="versionList" class="version-list skeleton"></div>
+          </div>
+
+          <div id="communityPanel" class="panel">
+            <div class="searchbar">
+              <input id="searchInput" placeholder="搜 Mod、光影、整合包…（留空就是热门）">
+              <select id="typeSel">
+                <option value="mod">Mod</option>
+                <option value="modpack">整合包</option>
+                <option value="datapack">数据包</option>
+                <option value="resourcepack">资源包</option>
+                <option value="shader">光影包</option>
+                <option value="plugin">服务端插件</option>
+              </select>
+              <select id="sourceSel">
+                <option value="modrinth">Modrinth</option>
+                <option value="curseforge">CurseForge</option>
+              </select>
+              <label class="check"><input type="checkbox" id="depsChk" checked>连带前置</label>
+              <button class="btn primary" id="searchBtn">搜索</button>
+            </div>
+            <div id="modList" class="mod-list skeleton"></div>
+            <div class="more-wrap"><button class="btn ghost" id="moreBtn">加载更多</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="page-net" class="page">
+      <div class="card net-card">
+        <div class="sec-title">正版联机<span class="hint">服务端开 online-mode，只有微软正版账号能进</span></div>
+        <div class="steps">
+          <button class="btn step" id="netPrepare">1. 生成开服配置</button>
+          <button class="btn step" id="netDownload">2. 下载官方服务端</button>
+          <button class="btn step primary" id="netStart">3. 开服</button>
+        </div>
+        <div class="srow">
+          <label class="checkline"><input type="checkbox" id="onlineMode" checked>正版校验（勾着 = 只有微软正版能进；不勾 = 离线模式，谁拿到地址都能进）</label>
+        </div>
+        <div class="net-info" id="netInfo">还没开始。局域网地址会显示在这里。</div>
+      </div>
+    </section>
+
+    <section id="page-ask" class="page">
+      <div class="card ask-card">
+        <div class="sec-title">长征小助手<span class="hint">直接说你要什么；不满意就说「再推荐几个」，我会接着上一次的方向翻</span></div>
+        <div class="chat" id="chat"></div>
+        <div class="chips">
+          <button class="chip" id="fixBtn">帮我看看为什么崩了</button>
+          <button class="chip" data-q="帧数太低了怎么办">帧数太低怎么办</button>
+          <button class="chip" data-q="内存调多少合适">内存调多少</button>
+          <button class="chip" data-q="光影怎么装">光影怎么装</button>
+          <button class="chip" data-q="我的存档在哪">存档在哪</button>
+          <button class="chip" data-q="怎么和朋友联机">怎么和朋友联机</button>
+          <button class="chip" data-q="Java版本怎么选">Java 选哪个</button>
+          <button class="chip" data-q="装了模组不生效">模组不生效</button>
+          <button class="chip" data-q="推荐点好玩的整合包">推荐好玩的整合包</button>
+        </div>
+        <div class="ask-bar" id="askDrop">
+          <input id="askInput" placeholder="有没有让帧数高一点的模组 / 找个好看的光影…">
+          <button class="btn primary" id="askBtn">发送</button>
+        </div>
+        <div class="ask-results hidden" id="askResults">
+          <div class="ask-results-head">
+            <span id="askCount">结果</span>
+            <button class="btn ghost small" id="askClose">收起</button>
+          </div>
+          <div id="askList" class="mod-list"></div>
+        </div>
+      </div>
+    </section>
+
+
+
+    <section id="page-files" class="page">
+      <div class="card">
+        <div class="sec-title">存档 <span class="tiny">跟着版本走，隔离开关决定位置</span>
+          <button class="btn ghost small" id="openSavesDir">打开文件夹</button></div>
+        <div class="saves-grid" id="savesGrid"><p class="tiny">正在读…</p></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="sec-title">截图 <span class="tiny">不隔离，统一放在 .minecraft/screenshots</span>
+          <button class="btn ghost small" id="openShotsDir">打开文件夹</button></div>
+        <div class="shots-grid" id="shotsGrid"><p class="tiny">正在读…</p></div>
+      </div>
+    </section>
+    <section id="page-guide" class="page">
+      <div class="guide">
+        <div class="card">
+          <div class="sec-title">第一次用，按这个顺序</div>
+          <ol class="steps-list">
+            <li><b>登录</b>：启动页点「微软登录」，按窗口里的网址输那八位代码；不想登正版就点「离线账号」随便起个名。</li>
+            <li><b>选版本</b>：去「下载」页，左边「原版游戏」里挑一个装，装完在启动页「我的版本」里点一下设为启动目标。</li>
+            <li><b>启动</b>：回启动页点「开始」。想调内存就去「设置 → 内存与下载」。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">下载页怎么用</div>
+          <ol class="steps-list">
+            <li><b>原版</b>：右上角能切 BMCLAPI（国内快）和官方源，点「加载版本清单」会列出从 2009 年到现在全部版本，按「最新正式版 / 正式版 / 快照 / 远古」分组。</li>
+            <li><b>装模组</b>：左边点 Mod / 光影包 / 资源包 等，右边直接就是热门榜，不用搜也能挑；有目标就上面搜索框打关键词。</li>
+            <li><b>装下来放哪</b>：自动进这个版本的 mods / shaderpacks / resourcepacks / datapacks，不用手动解压。</li>
+            <li><b>名字看不懂</b>：模组名会自动显示中文，下面是英文原名。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">出问题找小助手</div>
+          <ol class="steps-list">
+            <li>「小助手」页有「帮我看看为什么崩了」，它会读日志并自动修：重复 mod 挪走、缺前置补上、内存不足提示调大。</li>
+            <li>也可以在对话框里说人话：「有没有让帧数高一点的模组」「要个好玩点的整合包」，它会按意思去搜。</li>
+            <li>不满意就说「再推荐几个」，它会接着上一批继续翻。</li>
+            <li>想要一个陪聊 mod，说「给我做一个陪聊 mod」，会给你生成一套 Fabric 模组骨架。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">联机</div>
+          <ol class="steps-list">
+            <li>「联机」页三步：生成开服配置 → 下载官方服务端 → 开服。</li>
+            <li>勾着「正版校验」时只有微软正版号能进；不勾就是离线模式，谁拿到地址都能进。</li>
+            <li>局域网里直接连「你的内网IP:25565」；外网要先用内网穿透把 25565 映射出去。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">导出、分享、更新</div>
+          <ol class="steps-list">
+            <li>启动页「导出为整合包」：可以把当前版本的 mod 和设置打成一个 zip，勾选框决定带不带游戏设置和启动器设置。</li>
+            <li>设置页「分享长征启动器」：打一个包含 exe 和界面的压缩包，发给朋友就能用。</li>
+            <li>设置页「更新地址」填一个 version.json 的地址，点「检查更新」就能比对版本。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">常见问题</div>
+          <ol class="steps-list">
+            <li><b>启动没反应 / 闪退</b>：先去小助手点「帮我看看为什么崩了」，八成是内存或前置问题。</li>
+            <li><b>Java 不对</b>：设置 → 其他 → Java 路径，填你 JDK 的 java.exe；1.16 以下建议 Java 8，1.17 以上 Java 17/21。</li>
+            <li><b>游戏目录在哪</b>：启动页信息卡会显示，默认是启动器旁边的 .minecraft 文件夹。</li>
+            <li><b>想恢复默认设置</b>：删掉游戏目录里对应版本文件夹的 options.txt。</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+    <section id="page-settings" class="page">
+      <div class="settings-grid">
+        <div class="card">
+          <div class="sec-title">启动选项</div>
+          <div class="srow"><label>版本隔离</label>
+            <select id="setIsolation"><option>隔离所有版本</option><option>不隔离</option></select></div>
+          <div class="srow"><label>窗口大小</label>
+            <select id="setWinSize"><option>默认</option><option>1920x1080</option><option>1600x900</option><option>1280x720</option></select></div>
+          <div class="srow"><label>游戏窗口标题</label><input id="setWinTitle" placeholder="默认"></div>
+          <div class="srow"><label>自定义信息</label><input id="setCustomInfo"></div>
+          <div class="srow"><label>进程优先级</label>
+            <select id="setPriority"><option>高</option><option>正常</option><option>低</option></select></div>
+          <div class="srow"><label>JVM 参数</label><input id="setJvm" placeholder="可选"></div>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">内存与下载</div>
+          <div class="srow"><label class="checkline"><input type="radio" name="mem" id="memAuto">自动配置</label></div>
+          <div class="srow"><label class="checkline"><input type="radio" name="mem" id="memCustom" checked>自定义</label>
+            <input type="range" id="ramRange" min="1024" max="16384" step="512" style="flex:1">
+            <span id="ramVal" class="val">4096 MB</span></div>
+          <div class="srow"><label>下载源</label>
+            <select id="setDlSource"><option>优先官方，慢时换镜像</option><option>只用国内镜像</option><option>只用官方</option></select></div>
+          <div class="srow"><label>最大线程</label><input id="setThreads" type="number" min="1" max="32"></div>
+          <div class="srow"><label>限速 (KB/s)</label><input id="setSpeed" type="number" min="0"></div>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">外观</div>
+          <div class="srow"><label>主题色</label>
+            <div class="swatches" id="swatches">
+              <button class="sw active" data-theme="red" style="--c:#9E1B1B"></button>
+              <button class="sw" data-theme="blue" style="--c:#1F5FA8"></button>
+              <button class="sw" data-theme="green" style="--c:#2E7D46"></button>
+              <button class="sw" data-theme="gold" style="--c:#A9701C"></button>
+            </div>
+          </div>
+          <div class="srow"><label>离线皮肤</label>
+            <select id="setSkin"><option>随机</option><option>Steve</option><option>Alex</option><option>正版皮肤</option></select></div>
+          <div class="srow"><label class="checkline"><input type="checkbox" id="setChinese" checked>自动把游戏语言设为中文</label></div>
+          <div class="sec-title" style="margin-top:18px">其他</div>
+          <div class="srow"><label>Java 路径</label><input id="setJava" placeholder="留空自动找"></div>
+          <div class="srow"><label>微软客户端 ID</label><input id="setClientId"></div>
+          <div class="srow"><label>CurseForge Key</label><input id="setCf"></div>
+          <div class="srow"><label>分享长征启动器</label><button class="btn ghost" id="shareBtn">打包一个分享版</button></div>
+          <div class="srow"><label>更新地址</label><input id="setUpdateUrl" placeholder="version.json 的地址，留空就不检查"></div>
+          <div class="srow"><label>当前版本</label><span id="verLabel" class="val">-</span><button class="btn ghost" id="checkUpdateBtn">检查更新</button><button class="btn ghost" id="reloadBtn">重新加载界面</button></div>
+          <div class="srow"><label>DeepSeek Key</label><input id="setDeepseek" placeholder="填了就能真聊天"></div>
+          <div class="srow"><button class="btn primary" id="saveBtn">保存设置</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toolModal" class="modal hidden">
+  <div class="modal-box wide">
+    <h3 id="toolTitle">体检结果</h3>
+    <div id="toolBody" class="tool-body"></div>
+    <div class="srow"><button class="btn ghost" id="toolClose">关掉</button></div>
+  </div>
+</div>
+
+<div id="exportModal" class="modal hidden">
+  <div class="modal-box">
+    <h3>导出为整合包</h3>
+    <p class="tiny" id="exportWho">当前版本</p>
+    <div class="srow"><label class="checkline"><input type="checkbox" id="expGame" checked>打包游戏设置（options / config / 光影 / 资源包）</label></div>
+    <div class="srow"><label class="checkline"><input type="checkbox" id="expLauncher" checked>打包启动器设置（内存 / JVM / 主题）</label></div>
+    <div class="srow"><label>文件名</label><input id="expName" placeholder="长征整合包"></div>
+    <p class="tiny">不勾「游戏设置」就只带 mod，别人装上去就是默认设置；不勾「启动器设置」就是纯 mod 包。</p>
+    <div class="srow"><button class="btn primary" id="expGo">开始导出</button><button class="btn ghost" id="expClose">取消</button></div>
+  </div>
+</div>
+
+<div id="dlBar" class="dl-bar hidden">
+  <div class="dl-fill" id="dlFill"></div>
+  <div class="dl-text"><span id="dlLabel">准备下载…</span><span id="dlPct"></span></div>
+</div>
+
+<div id="toast" class="toast"></div>
+<div id="loginModal" class="modal hidden">
+  <div class="modal-box">
+    <h3>微软登录</h3>
+    <p>打开 <a id="loginUrl" target="_blank"></a> ，输入下面这串代码：</p>
+    <div class="code" id="loginCode">----</div>
+    <p class="tiny" id="loginState">等待确认…</p>
+    <button class="btn ghost" id="loginClose">关闭</button>
+  </div>
+</div>
+<script src="/static/mods.js?v=110"></script>
+  <script src="/static/app.js?v=110"></script>
+</body>
+</html>
