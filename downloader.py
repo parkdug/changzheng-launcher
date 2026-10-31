@@ -50,12 +50,25 @@ def get_json(url, source="official"):
         return json.loads(resp.read().decode("utf-8"))
 
 
+_MANIFEST_CACHE = {}
+_MANIFEST_TTL = 600
+
+
+_MANIFEST_CACHE = {}
+_MANIFEST_TTL = 600
+
+
 def manifest(source="official"):
+    import time as _time
+    hit = _MANIFEST_CACHE.get(source)
+    if hit and _time.time() - hit[0] < _MANIFEST_TTL:
+        return hit[1]
     data = get_json(MANIFEST.get(source, MANIFEST["official"]), source)
     out = []
     for item in data.get("versions") or []:
         out.append({"id": item["id"], "type": item.get("type"), "url": item["url"],
                     "release": item.get("releaseTime", "")[:10]})
+    _MANIFEST_CACHE[source] = (_time.time(), out)
     return out
 
 
