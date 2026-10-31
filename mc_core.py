@@ -194,23 +194,52 @@ def extract_natives(version):
 # ────────────────────────────── Java ──────────────────────────────
 
 def find_java():
-    if os.environ.get("JAVA_HOME"):
-        exe = os.path.join(os.environ["JAVA_HOME"], "bin", "java.exe")
-        if os.path.isfile(exe):
-            return exe
-    found = shutil.which("java")
-    if found:
-        return found
+    """尽量把机器上的 Java 都翻出来：环境变量、注册表、常见目录、PATH、我们下过的。"""
+    import subprocess
+
+    found = []
+
+    def add(path):
+        if path and os.path.isfile(path) and path not in found:
+            found.append(path)
+
+    home = os.environ.get("JAVA_HOME")
+    if home:
+        add(os.path.join(home, "bin", "java.exe"))
     for root in JAVA_CANDIDATES:
         if not os.path.isdir(root):
             continue
-        for base, dirs, files in os.walk(root):
-            if "java.exe" in files and base.lower().endswith("bin"):
-                return os.path.join(base, "java.exe")
-            if base.count(os.sep) - root.count(os.sep) > 4:
-                dirs[:] = []
-    return ""
-
+        for name in os.listdir(root):
+            add(os.path.join(root, name, "bin", "java.exe"))
+    for base in (r"C:\Program Files\Microsoft", r"C:\Program Files\Amazon Corretto",
+                 r"C:\Program Files\Zulu", r"C:\Program Files\BellSoft",
+                 r"C:\Program Files\Semeru"):
+        if os.path.isdir(base):
+            for name in os.listdir(base):
+                add(os.path.join(base, name, "bin", "java.exe"))
+                add(os.path.join(base, name, "jdk", "bin", "java.exe"))
+    try:
+        out = subprocess.run(["where", "java"], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=8,
+                             creationflags=0x08000000 if sys.platform == "win32" else 0).stdout
+        for line in out.splitlines():
+            add(line.strip())
+    except Exception:
+        pass
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\JavaSoft\Java Runtime Environment") as key:
+            pass
+    except Exception:
+        pass
+    if _jre:
+        try:
+            for exe in _jre._scan(JAVA_DIR):
+                add(exe)
+        except Exception:
+            pass
+    return found[0] if found else ""
 
 # ────────────────────────────── 启动 ──────────────────────────────
 
