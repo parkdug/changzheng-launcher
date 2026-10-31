@@ -455,3 +455,7 @@ select, input[type=number], input[type=text] {
   display: flex; flex-direction: column; min-height: 0;
 }
 #page-ask .chat { flex: 1 1 0; min-height: 80px; overflow-y: auto; overflow-x: hidden; }
+
+.empty-hint { text-align: center; padding: 34px 20px; color: #6B4A3E; }
+.empty-hint b { font-size: 15px; display: block; margin-bottom: 8px; }
+.empty-hint p { font-size: 12px; color: var(--sub); line-height: 1.8; max-width: 460px; margin: 0 auto 14px; }
