@@ -12,6 +12,7 @@
     <nav>
       <button class="rail-btn active" data-page="start"><i>▶</i>启动</button>
       <button class="rail-btn" data-page="download"><i>⤓</i>下载</button>
+      <button class="rail-btn" data-page="skins"><i>☺</i>皮肤库</button>
       <button class="rail-btn" data-page="net"><i>⇄</i>联机</button>
       <button class="rail-btn" data-page="ask"><i>✦</i>小助手</button>
       <button class="rail-btn" data-page="settings"><i>◎</i>设置</button>
@@ -134,6 +135,21 @@
       </div>
     </section>
 
+
+    <section id="page-skins" class="page">
+      <div class="card">
+        <div class="sec-title">个人皮肤库 <span class="tiny">放在这里的皮肤，开游戏前挑一个用</span>
+          <button class="btn ghost small" id="skinAdd">添加皮肤</button>
+          <input type="file" id="skinFile" accept="image/png" style="display:none">
+        </div>
+        <div class="skins-grid" id="skinsGrid"><p class="tiny">正在读…</p></div>
+        <div class="quick-row" style="margin-top:12px">
+          <button class="btn ghost" id="skinInstallMod">装皮肤显示模组（CustomSkinLoader）</button>
+          <button class="btn ghost" id="skinLittleSkin">打开 LittleSkin 皮肤站</button>
+        </div>
+        <p class="tiny" style="margin-top:8px">离线号默认看不到自定义皮肤，装了 CustomSkinLoader 之后才能显示；LittleSkin 上挑好的皮肤也能通过它同步下来。</p>
+      </div>
+    </section>
     <section id="page-net" class="page">
       <div class="card net-card">
         <div class="sec-title">正版联机<span class="hint">服务端开 online-mode，只有微软正版账号能进</span></div>
