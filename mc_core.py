@@ -26,6 +26,26 @@ def _default_mc_dir():
 
 
 MC_DIR = os.environ.get("CZ_MC_DIR") or _default_mc_dir()
+_BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+JAVA_DIR = os.path.join(_BASE, "java")
+try:
+    import jre as _jre
+except Exception:
+    _jre = None
+
+
+def find_java_for(mc_version):
+    """优先用按版本适配、已经下好的 Java。"""
+    if _jre:
+        try:
+            exe, _major = _jre.pick(JAVA_DIR, _jre.required_major(mc_version))
+            if exe:
+                return exe
+        except Exception:
+            pass
+    return find_java()
+
+
 JAVA_CANDIDATES = [
     r"C:\Program Files\Java",
     r"C:\Program Files (x86)\Java",
@@ -204,7 +224,9 @@ def _subst(value, table):
 
 def build_command(version, profile, java=None, ram_mb=4096, extra_jvm=None, extra_game=None,
                   demo=False, game_dir=None):
-    java = java or find_java()
+    if not java:
+        vid = version.get("inheritsFrom") or version.get("id") or ""
+        java = find_java_for(vid)
     if not java:
         raise RuntimeError("找不到 java.exe")
     version_id = version["id"]
