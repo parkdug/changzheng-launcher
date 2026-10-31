@@ -45,7 +45,20 @@ BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HER
 CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
 
-VERSION = "1.0.1"
+def _read_version():
+    try:
+        path = os.path.join(BASE, "version.txt")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read().strip()
+            if text:
+                return text
+    except Exception:
+        pass
+    return "1.0.1"
+
+
+VERSION = _read_version()
 _COMMUNITY_CACHE = {}
 
 PROGRESS = {"text": "", "percent": None, "ts": 0.0}
@@ -103,7 +116,7 @@ def load_config():
             "threads": 8, "speed_limit": 0, "auto_memory": False, "skin": "随机",
             "update_hint": False, "test_hint": False, "auto_chinese": True,
             "launcher_update": "有新版本时自动下载", "announce": "显示所有公告",
-            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://github.com/parkdug/changzheng-launcher/releases/download/app-latest/version.json"}
+            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "auto_update": True, "update_url": "https://github.com/parkdug/changzheng-launcher/releases/download/app-latest/version.json"}
 
 
 def save_config(cfg):
@@ -957,7 +970,7 @@ class Handler(BaseHTTPRequestHandler):
                         "window_title", "custom_info", "visible", "priority", "jvm_args", "java_path",
                         "download_source", "threads", "speed_limit", "auto_memory", "skin",
                         "update_hint", "test_hint", "auto_chinese", "launcher_update", "announce",
-                        "cache_dir", "anonymous", "mod_filename", "update_url"):
+                        "cache_dir", "anonymous", "mod_filename", "update_url", "auto_update"):
                 if key in body:
                     cfg[key] = body[key]
             save_config(cfg)
@@ -1335,6 +1348,66 @@ def _bind_any(preferred=8765, tries=12):
     raise RuntimeError("没有可用端口（%d~%d）" % (preferred, preferred + tries))
 
 
+def auto_update_worker(startup=True):
+    """联网就静默检查更新，有新版自动换掉并重启。"""
+    import time as _t
+    if os.environ.get("CZ_NO_AUTOUPDATE"):
+        return
+    _t.sleep(20 if startup else 0)
+    while True:
+        try:
+            cfg_now = load_config()
+            if cfg_now.get("auto_update", True):
+                info = updater.check(VERSION, cfg_now.get("update_url") or "")
+                if info.get("ok") and info.get("newer") and info.get("url"):
+                    folder = os.path.join(BASE, "updates")
+                    target = os.path.join(folder, "changzheng-launcher.zip")
+                    progress("发现新版本 %s，正在后台下载" % info.get("latest"))
+                    path, error = updater.download(info["url"], target, progress)
+                    if path:
+                        apply_update_auto(path, info.get("latest") or "")
+        except Exception as error:
+            progress("自动更新出错：%s" % str(error)[:60])
+        _t.sleep(7200)
+
+
+def apply_update_auto(zip_path, version_text):
+    """解包 → 写自动更新脚本 → 退出，脚本替换完自己重启。"""
+    import subprocess as _sp
+    import zipfile as _zip
+    stage = os.path.join(BASE, "updates", "new")
+    try:
+        if os.path.isdir(stage):
+            import shutil as _sh
+            _sh.rmtree(stage, ignore_errors=True)
+        with _zip.ZipFile(zip_path) as zf:
+            zf.extractall(stage)
+        with open(os.path.join(stage, "version.txt"), "w", encoding="utf-8") as handle:
+            handle.write(version_text or VERSION)
+        bat = os.path.join(BASE, "updates", "自动更新.bat")
+        lines = [
+            "@echo off",
+            "chcp 65001 >nul",
+            "timeout /t 3 >nul",
+            "taskkill /IM electron.exe /F >nul 2>&1",
+            "taskkill /IM 长征引擎.exe /F >nul 2>&1",
+            "taskkill /IM 长征启动器.exe /F >nul 2>&1",
+            'robocopy "%s" "%s" /E /IS /IT >nul' % (stage, BASE),
+            'if exist "%s\长征启动器.exe" start "" "%s\长征启动器.exe"' % (BASE, BASE),
+            'del "%%~f0"',
+        ]
+        with open(bat, "w", encoding="utf-8") as handle:
+            handle.write(chr(10).join(lines))
+        _sp.Popen(["cmd", "/c", bat], creationflags=0x08000000,
+                  stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        import threading as _th
+        _th.Timer(1.5, lambda: os._exit(0)).start()
+        return True
+    except Exception as error:
+        progress("自动更新失败：%s" % str(error)[:60])
+        return False
+
+
 def main(open_browser_tab=True):
     server = _bind_any(PORT)
     url = "http://127.0.0.1:%d/" % PORT
@@ -1351,6 +1424,7 @@ def main(open_browser_tab=True):
 
     if open_browser_tab:
         threading.Thread(target=open_browser, daemon=True).start()
+    threading.Thread(target=auto_update_worker, args=(True,), daemon=True).start()
     server.serve_forever()
 
 
