@@ -1200,6 +1200,7 @@ class Handler(BaseHTTPRequestHandler):
             if not src or not os.path.isfile(src):
                 self._json({"ok": False, "error": "还没下好更新包"})
                 return
+            auto = bool(body.get("auto"))
             try:
                 import zipfile as _zip3
                 stage = os.path.join(BASE, "updates", "new")
@@ -1208,18 +1209,29 @@ class Handler(BaseHTTPRequestHandler):
                     _sh3.rmtree(stage, ignore_errors=True)
                 with _zip3.ZipFile(src) as zf:
                     zf.extractall(stage)
-                bat = os.path.join(BASE, "updates", "应用更新.bat")
+                if auto:
+                    bat = os.path.join(BASE, "updates", "自动更新.bat")
+                else:
+                    bat = os.path.join(BASE, "updates", "应用更新.bat")
                 lines = [
                     "@echo off",
                     "chcp 65001 >nul",
-                    "timeout /t 2 >nul",
-                    "xcopy /E /Y /I \"%s\*\" \"%s\\\"" % (stage, BASE),
-                    "start \"\" \"%s\长征启动器.exe\"" % BASE,
+                    "timeout /t 3 >nul",
+                    "taskkill /IM electron.exe /F >nul 2>&1",
+                    "taskkill /IM 长征引擎.exe /F >nul 2>&1",
+                    "taskkill /IM 长征启动器.exe /F >nul 2>&1",
+                    "robocopy \"%s\" \"%s\" /E /IS /IT >nul" % (stage, BASE),
+                    "if exist \"%s\长征启动器.exe\" start \"\" \"%s\长征启动器.exe\"" % (BASE, BASE),
                     "del \"%%~f0\"",
                 ]
                 with open(bat, "w", encoding="utf-8") as fh:
                     fh.write(chr(10).join(lines))
-                self._json({"ok": True, "bat": bat})
+                self._json({"ok": True, "bat": bat, "auto": auto})
+                if auto:
+                    import subprocess as _sp4
+                    _sp4.Popen(["cmd", "/c", bat], creationflags=0x08000000,
+                               stdout=_sp4.DEVNULL, stderr=_sp4.DEVNULL)
+                    threading.Timer(1.5, lambda: os._exit(0)).start()
             except Exception as error:
                 self._json({"ok": False, "error": str(error)})
             return
