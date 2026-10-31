@@ -34,11 +34,25 @@ except Exception:
     _jre = None
 
 
-def find_java_for(mc_version):
-    """优先用按版本适配、已经下好的 Java。"""
+def find_java_for(mc_version, configured=""):
+    """挑 Java：手动指定的优先（版本不匹配就按版本找），其次下好的适配版本，最后系统里随便一个。"""
+    want = 0
     if _jre:
         try:
-            exe, _major = _jre.pick(JAVA_DIR, _jre.required_major(mc_version))
+            want = _jre.required_major(mc_version)
+        except Exception:
+            want = 0
+    if configured and os.path.isfile(configured):
+        if not want:
+            return configured
+        try:
+            if _jre and _jre.major_of(configured) == want:
+                return configured
+        except Exception:
+            return configured
+    if _jre:
+        try:
+            exe, _major = _jre.pick(JAVA_DIR, want)
             if exe:
                 return exe
         except Exception:
