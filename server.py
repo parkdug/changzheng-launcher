@@ -43,7 +43,7 @@ _BUNDLED_WEB = os.path.join(HERE, "web")
 _EXTERNAL_WEB = os.path.join(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE, "web")
 # 优先用打包在 exe 里的界面，避免外部残留的旧 web 把新界面盖掉
 WEB = _BUNDLED_WEB if os.path.isdir(_BUNDLED_WEB) else _EXTERNAL_WEB
-BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE
+BASE = os.environ.get("CZ_BASE") or (os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE)
 CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
 
