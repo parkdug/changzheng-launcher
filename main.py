@@ -17,6 +17,16 @@ import server  # noqa: E402
 
 WEB_DIR = server.WEB
 
+try:
+    import selfupdate
+    if selfupdate.apply_pending(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))):
+        try:
+            server.VERSION = server._read_version()
+        except Exception:
+            pass
+except Exception:
+    pass
+
 
 def wait_port(port, timeout=25):
     end = time.time() + timeout
