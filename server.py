@@ -27,6 +27,7 @@ import assistant
 import downloader
 import mc_core as core
 import import_pack
+import fw
 import jre
 import modgen
 import pack_tools
@@ -463,6 +464,35 @@ class Handler(BaseHTTPRequestHandler):
                         "online": bool(STATE.get("server_proc") and STATE["server_proc"].poll() is None),
                         "lan": lan_ip()})
             return
+        if path == "/api/direct/net":
+            import socket as _sock
+            info = {"ok": True, "v6": [], "v4": [], "public_v6": "", "tools": {}}
+            try:
+                for item in _sock.getaddrinfo(_sock.gethostname(), None):
+                    ip = item[4][0]
+                    if ":" in ip and not ip.startswith("fe80") and ip not in info["v6"]:
+                        info["v6"].append(ip)
+                    elif "." in ip and not ip.startswith("127.") and ip not in info["v4"]:
+                        info["v4"].append(ip)
+            except Exception:
+                pass
+            try:
+                import urllib.request as _ur
+                with _ur.urlopen("https://api6.ipify.org", timeout=8) as resp:
+                    info["public_v6"] = resp.read().decode().strip()
+            except Exception:
+                pass
+            for name, hints in (("tailscale", ("tailscale",)), ("zerotier", ("zerotier",))):
+                try:
+                    import subprocess as _sp
+                    out = _sp.run(["ipconfig"], capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace",
+                                  creationflags=0x08000000).stdout
+                    info["tools"][name] = any(h in out.lower() for h in hints)
+                except Exception:
+                    info["tools"][name] = False
+            self._json(info)
+            return
         if path == "/api/saves":
             ver = (query.get("version") or [""])[0] or (STATE.get("chosen") or "")
             saves_dir = os.path.join(core.MC_DIR, "versions", ver, "saves")
@@ -652,6 +682,12 @@ class Handler(BaseHTTPRequestHandler):
         if cfg.get("mc_dir"):
             core.MC_DIR = cfg["mc_dir"]
 
+        if parsed.path == "/api/direct/firewall":
+            try:
+                self._json(fw.open_port(BASE))
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
+            return
         if parsed.path == "/api/upload":
             name = urllib.parse.unquote(self.headers.get("X-Filename") or "upload.zip")
             safe = os.path.basename(name)
