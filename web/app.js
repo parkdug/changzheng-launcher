@@ -304,7 +304,11 @@ function renderVersions() {
         btn.disabled = true;
         btn.textContent = "安装中…";
         toast("开始安装 " + item.id);
-        const started = await api("/api/install/vanilla", { id: item.id, source: state.source });
+        const started = await api("/api/install/vanilla", {
+          id: item.id, source: state.source,
+          loader: ($("#loaderSel") || {}).value || "",
+          prereqs: !!($("#prereqChk") && $("#prereqChk").checked),
+        });
         if (!started.ok) {
           toast("安装没起来：" + started.error, 5000);
           btn.disabled = false; btn.textContent = "安装";
@@ -700,12 +704,24 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
   toast("有新版本 " + r.latest + "，开始下载…", 4000);
   if (r.url) {
     await api("/api/download_update", { url: r.url });
-    setTimeout(async () => {
-      const p = await api("/api/progress");
-      if (p.progress && p.progress.indexOf("下好了") >= 0) {
-        toast("更新包在 updates 文件夹，解压覆盖就行", 6000);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 600000) {
+      await new Promise((res) => setTimeout(res, 3000));
+      const pg = await api("/api/progress");
+      const msg = pg.progress || "";
+      if (msg.indexOf("下好了") >= 0) {
+        const ap = await api("/api/update/apply", {});
+        if (ap.ok) {
+          toast("更新包下好了，运行「应用更新.bat」就会替换并重启", 8000);
+          await api("/api/reveal", { path: ap.bat });
+        } else {
+          toast("更新包装好了，在 updates 文件夹里手动覆盖", 6000);
+        }
+        return;
       }
-    }, 8000);
+      if (msg.indexOf("失败") >= 0) { toast(msg, 6000); return; }
+    }
+    toast("下载太慢了，可以稍后在设置里再试", 5000);
   } else {
     toast("有新版但没给下载地址：" + (r.notes || ""), 6000);
   }
