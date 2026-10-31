@@ -117,15 +117,40 @@ def _probe(url, size=200000, timeout=6):
         return 0
 
 
+GITEE_API = "https://gitee.com/api/v5/repos/parkty/changzheng-launcher/releases"
 GITEE_RELEASE = "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/"
+GITEE_CACHE = {"ts": 0.0, "url": ""}
+
+
+def gitee_asset():
+    """去 Gitee 找一个叫 changzheng-launcher.zip 的附件，返回直链。"""
+    import time
+    if GITEE_CACHE["url"] and time.time() - GITEE_CACHE["ts"] < 600:
+        return GITEE_CACHE["url"]
+    try:
+        with _open(GITEE_API, 8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        for rel in data if isinstance(data, list) else []:
+            for asset in rel.get("assets") or []:
+                if asset.get("name") == "changzheng-launcher.zip":
+                    GITEE_CACHE["ts"] = time.time()
+                    GITEE_CACHE["url"] = asset.get("browser_download_url") or ""
+                    return GITEE_CACHE["url"]
+    except Exception:
+        pass
+    return ""
 
 
 def _candidates(url):
     """GitHub 的包，同时试试 Gitee 上同名附件（有就自动用，没有探测会返回 0）。"""
     out = []
     name = url.rstrip("/").split("/")[-1]
+    gitee = gitee_asset()
+    if gitee:
+        out.append((gitee, ""))
     if name.endswith(".zip"):
         out.append((GITEE_RELEASE + name, ""))
+        out.append(("https://gitee.com/parkty/changzheng-launcher/raw/main/" + name, ""))
     for prefix in MIRRORS:
         out.append(((prefix + url) if prefix else url, prefix))
     return out
@@ -160,6 +185,21 @@ def _fetch_range(real, start, end, path, counter, size, say, lock):
         say("更新包 %d%%" % int(done * 100 / size))
 
 
+def _stream_download(real, target, say):
+    with _open(real, 120) as resp, open(target, "wb") as handle:
+        total = int(resp.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = resp.read(1 << 20)
+            if not chunk:
+                break
+            handle.write(chunk)
+            done += len(chunk)
+            if total:
+                say("更新包 %d%%" % int(done * 100 / total))
+    return os.path.getsize(target)
+
+
 def download(url, target, progress=None, tries=2, chunks=24):
     say = progress or (lambda _t: None)
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -176,7 +216,28 @@ def download(url, target, progress=None, tries=2, chunks=24):
         say("更新包下好了（100/100）")
         return target, ""
 
-    candidates = speed_test(url)
+    gitee_first = gitee_asset()
+    if gitee_first:
+        try:
+            say("从 Gitee 国内节点下载")
+            _stream_download(gitee_first, target, say)
+            if valid(target):
+                say("更新包下好了（100/100）")
+                return target, ""
+            raise RuntimeError("包坏了")
+        except Exception:
+            say("Gitee 那边没成功，换别的线路")
+            try:
+                if os.path.isfile(target):
+                    os.remove(target)
+            except Exception:
+                pass
+    candidates = []
+    if gitee_first:
+        candidates.append((0, gitee_first))
+    for item in speed_test(url):
+        if item[1] != gitee_first:
+            candidates.append(item)
     if not candidates:
         candidates = [(0, url)]
     say("找到 %d 条可用线路，正在挑最快的下" % len(candidates))
@@ -184,6 +245,7 @@ def download(url, target, progress=None, tries=2, chunks=24):
     for speed, real in candidates[:3]:
         try:
             head = _open(real, 20, {"User-Agent": UA, "Range": "bytes=0-0"})
+            supports_range = getattr(head, "status", 200) == 206
             size = 0
             content_range = head.headers.get("Content-Range") or ""
             if "/" in content_range:
@@ -196,6 +258,21 @@ def download(url, target, progress=None, tries=2, chunks=24):
             head.close()
             if not size:
                 continue
+            if not supports_range:
+                say("这条线路不支持分块，整包下载")
+                with _open(real, 120) as resp, open(target, "wb") as handle:
+                    done = 0
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        done += len(chunk)
+                        say("更新包 %d%%" % int(done * 100 / size))
+                if not valid(target):
+                    raise RuntimeError("包坏了")
+                say("更新包下好了（100/100）")
+                return target, ""
             tmp_dir = target + ".parts"
             os.makedirs(tmp_dir, exist_ok=True)
             step = max(1, size // chunks)
