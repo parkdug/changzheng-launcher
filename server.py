@@ -29,6 +29,7 @@ import mc_core as core
 import import_pack
 import fw
 import jre
+import loaders
 import modgen
 import pack_tools
 import mods_api
@@ -44,6 +45,8 @@ CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
 
 VERSION = "1.0.1"
+_COMMUNITY_CACHE = {}
+
 PROGRESS = {"text": "", "percent": None, "ts": 0.0}
 
 FAQ = [
@@ -252,6 +255,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": str(error)})
             return
         if path == "/api/community":
+            import time as _t3
+            cache_key = urllib.parse.urlencode(sorted((k, v[0]) for k, v in query.items()))
+            cached = _COMMUNITY_CACHE.get(cache_key)
+            if cached and _t3.time() - cached[0] < 300:
+                self._json(cached[1])
+                return
             kind = (query.get("type") or ["mod"])[0]
             mc_ver = (query.get("mc") or ["1.20.1"])[0]
             loader = (query.get("loader") or [""])[0]
@@ -281,7 +290,9 @@ class Handler(BaseHTTPRequestHandler):
                     translate.decorate(hits, limit=12, workers=4)
                 except Exception:
                     pass
-                self._json({"ok": True, "items": hits + extra, "mc": mc_ver, "loader": loader})
+                payload_out = {"ok": True, "items": hits + extra, "mc": mc_ver, "loader": loader}
+                _COMMUNITY_CACHE[cache_key] = (_t3.time(), payload_out)
+                self._json(payload_out)
             except Exception as error:
                 self._json({"ok": False, "error": str(error)})
             return
@@ -863,11 +874,42 @@ class Handler(BaseHTTPRequestHandler):
             vid = body.get("id")
             source = body.get("source", "bmclapi")
 
+            want_loader = (body.get("loader") or "").strip().lower()
+            want_prereq = bool(body.get("prereqs"))
+
             def work():
                 STATE["busy"] = True
                 progress("开始安装 %s（0/100）" % vid)
                 try:
                     downloader.install_vanilla(vid, core.MC_DIR, source, progress)
+                    if want_loader in ("fabric", "forge", "neoforge"):
+                        try:
+                            progress("装 %s 加载器…" % want_loader)
+                            if want_loader == "fabric":
+                                downloader.install_fabric(vid, core.MC_DIR)
+                            elif want_loader == "forge":
+                                loaders.install_forge(vid, core.MC_DIR, progress)
+                            else:
+                                loaders.install_neoforge(vid, core.MC_DIR, progress)
+                            progress("加载器装好了")
+                        except Exception as load_error:
+                            progress("加载器没装上：%s" % str(load_error)[:70])
+                    if want_prereq:
+                        try:
+                            target_dir = os.path.join(core.MC_DIR, "versions", vid, "mods")
+                            names = ["fabric-api"] if want_loader == "fabric" else []
+                            if want_loader in ("forge", "neoforge"):
+                                names = ["cloth-config", "architectury-api"]
+                            for slug in names:
+                                progress("装常用前置 %s" % slug)
+                                try:
+                                    hit = mods_api.search_project(slug, "mod", vid, [], 1)
+                                    if hit:
+                                        mods_api.install_project(hit[0], "mod", vid, [want_loader], target_dir)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                     try:
                         try:
                             _v = core.load_version(vid)
@@ -1041,36 +1083,81 @@ class Handler(BaseHTTPRequestHandler):
 
             def grab():
                 STATE["busy"] = True
-                try:
-                    import urllib.request as _ur
-                    folder = os.path.join(BASE, "updates")
-                    os.makedirs(folder, exist_ok=True)
-                    name = os.path.basename(url.split("?")[0]) or "update.zip"
-                    target = os.path.join(folder, name)
-                    req2 = _ur.Request(url, headers={"User-Agent": "ChangzhengLauncher"})
+                folder = os.path.join(BASE, "updates")
+                os.makedirs(folder, exist_ok=True)
+                name = os.path.basename(url.split("?")[0]) or "update.zip"
+                target = os.path.join(folder, name)
+                last = None
+                for attempt in range(4):
                     try:
-                        resp = _ur.urlopen(req2, timeout=120)
-                    except Exception:
-                        resp = _ur.urlopen(req2, timeout=120, context=tools._ctx())
-                    with resp as resp, open(target, "wb") as handle:
-                        total = int(resp.headers.get("Content-Length") or 0)
-                        done = 0
-                        while True:
-                            chunk = resp.read(1 << 20)
-                            if not chunk:
-                                break
-                            handle.write(chunk)
-                            done += len(chunk)
-                            if total:
-                                progress("更新包 %d%%" % int(done * 100 / total))
-                    progress("更新包下好了（100/100）：%s" % target)
-                    STATE["update_file"] = target
-                except Exception as error:
-                    progress("更新包下载失败：%s" % error)
+                        have = os.path.getsize(target) if os.path.isfile(target) else 0
+                        headers = {"User-Agent": "ChangzhengLauncher"}
+                        if have:
+                            headers["Range"] = "bytes=%d-" % have
+                        req2 = urllib.request.Request(url, headers=headers)
+                        try:
+                            resp = urllib.request.urlopen(req2, timeout=60)
+                        except Exception:
+                            resp = urllib.request.urlopen(req2, timeout=60, context=tools._ctx())
+                        mode = "ab" if have and resp.status == 206 else "wb"
+                        if mode == "wb":
+                            have = 0
+                        total = int(resp.headers.get("Content-Length") or 0) + have
+                        done = have
+                        with resp, open(target, mode) as handle:
+                            while True:
+                                chunk = resp.read(1 << 20)
+                                if not chunk:
+                                    break
+                                handle.write(chunk)
+                                done += len(chunk)
+                                if total:
+                                    progress("更新包 %d%%" % int(done * 100 / total))
+                        size = os.path.getsize(target)
+                        if total and size < total * 0.98:
+                            raise RuntimeError("没下完")
+                        STATE["update_file"] = target
+                        progress("更新包下好了（100/100）：%s" % target)
+                        last = None
+                        break
+                    except Exception as error:
+                        last = error
+                        progress("第 %d 次下载中断，重试…" % (attempt + 1))
+                        time.sleep(2)
+                if last is not None:
+                    progress("更新包下载失败：%s" % str(last)[:80])
                 STATE["busy"] = False
 
             threading.Thread(target=grab, daemon=True).start()
             self._json({"ok": True})
+            return
+        if parsed.path == "/api/update/apply":
+            src = STATE.get("update_file") or ""
+            if not src or not os.path.isfile(src):
+                self._json({"ok": False, "error": "还没下好更新包"})
+                return
+            try:
+                import zipfile as _zip3
+                stage = os.path.join(BASE, "updates", "new")
+                if os.path.isdir(stage):
+                    import shutil as _sh3
+                    _sh3.rmtree(stage, ignore_errors=True)
+                with _zip3.ZipFile(src) as zf:
+                    zf.extractall(stage)
+                bat = os.path.join(BASE, "updates", "应用更新.bat")
+                lines = [
+                    "@echo off",
+                    "chcp 65001 >nul",
+                    "timeout /t 2 >nul",
+                    "xcopy /E /Y /I \"%s\*\" \"%s\\\"" % (stage, BASE),
+                    "start \"\" \"%s\长征启动器.exe\"" % BASE,
+                    "del \"%%~f0\"",
+                ]
+                with open(bat, "w", encoding="utf-8") as fh:
+                    fh.write(chr(10).join(lines))
+                self._json({"ok": True, "bat": bat})
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
             return
         if parsed.path == "/api/share":
             import zipfile as _zip
