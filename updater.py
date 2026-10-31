@@ -47,6 +47,7 @@ def _ver_key(text):
 
 
 SOURCES = [
+    "https://gitee.com/parkty/changzheng-launcher/raw/main/version.json",
     "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@main/version.json",
     "https://raw.githubusercontent.com/parkdug/changzheng-launcher/main/version.json",
     "https://github.com/parkdug/changzheng-launcher/releases/download/app-latest/version.json",
@@ -92,8 +93,12 @@ def check(current="1.0.0", extra=""):
     threads = [threading.Thread(target=worker, args=(s,), daemon=True) for s in sources]
     for th in threads:
         th.start()
+    started = time.time()
     for th in threads:
-        th.join(6)
+        th.join(2.5)
+    if not results:
+        for th in threads:
+            th.join(max(1.0, 6 - (time.time() - started)))
     if not results:
         return {"ok": False, "error": "几个源都没连上，过会儿再试"}
     best = max(results, key=lambda r: _ver_key(r["latest"]))
@@ -112,14 +117,28 @@ def _probe(url, size=200000, timeout=6):
         return 0
 
 
+GITEE_RELEASE = "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/"
+
+
+def _candidates(url):
+    """GitHub 的包，同时试试 Gitee 上同名附件（有就自动用，没有探测会返回 0）。"""
+    out = []
+    name = url.rstrip("/").split("/")[-1]
+    if name.endswith(".zip"):
+        out.append((GITEE_RELEASE + name, ""))
+    for prefix in MIRRORS:
+        out.append(((prefix + url) if prefix else url, prefix))
+    return out
+
+
 def speed_test(url):
     scored = []
 
-    def worker(prefix):
-        real = (prefix + url) if prefix else url
+    def worker(real, _prefix):
         scored.append((_probe(real), real))
 
-    threads = [threading.Thread(target=worker, args=(p,), daemon=True) for p in MIRRORS]
+    threads = [threading.Thread(target=worker, args=(real, p), daemon=True)
+               for real, p in _candidates(url)]
     for th in threads:
         th.start()
     for th in threads:
