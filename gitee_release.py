@@ -1,0 +1,130 @@
+"""gitee_release — 把更新包发到 Gitee，给国内用户走国内直链。
+
+用法：
+    set GITEE_TOKEN=xxxx
+    python gitee_release.py            # 用已有仓库
+    python gitee_release.py --create   # 没有仓库就先建一个
+
+需要 token 权限：projects（读写仓库）。
+"""
+
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+TOKEN = os.environ.get("GITEE_TOKEN") or ""
+API = "https://gitee.com/api/v5"
+REPO = os.environ.get("GITEE_REPO") or "changzheng-launcher"
+ZIP = r"D:\DSH work\changzheng-launcher.zip"
+
+
+def api(method, path, payload=None, raw=None, ctype="application/json"):
+    url = API + path
+    data = raw if raw is not None else (json.dumps(payload).encode() if payload is not None else None)
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("User-Agent", "changzheng-publisher")
+    if data is not None:
+        req.add_header("Content-Type", ctype)
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            body = resp.read().decode("utf-8", "replace")
+            return resp.status, (json.loads(body) if body.strip()[:1] in ("{", "[") else body)
+    except urllib.error.HTTPError as error:
+        return error.code, error.read().decode("utf-8", "replace")[:300]
+
+
+def me():
+    return api("GET", "/user?access_token=" + TOKEN)
+
+
+def create_repo(name, private=False):
+    return api("POST", "/user/repos", {
+        "access_token": TOKEN, "name": name,
+        "description": "长征启动器 更新包", "private": private,
+        "has_issues": "false", "has_wiki": "false",
+    })
+
+
+def create_release(owner, repo, tag, name, body):
+    return api("POST", "/repos/%s/%s/releases" % (owner, repo), {
+        "access_token": TOKEN, "tag_name": tag, "name": name, "body": body,
+        "target_commitish": "master",
+    })
+
+
+def upload_asset(owner, repo, release_id, path):
+    boundary = "----changzheng" + os.urandom(8).hex()
+    with open(path, "rb") as handle:
+        data = handle.read()
+    name = os.path.basename(path)
+    parts = []
+    parts.append(("--" + boundary).encode())
+    parts.append(('Content-Disposition: form-data; name="access_token"').encode())
+    parts.append(b"")
+    parts.append(TOKEN.encode())
+    parts.append(("--" + boundary).encode())
+    parts.append(('Content-Disposition: form-data; name="file"; filename="%s"' % name).encode())
+    parts.append(b"Content-Type: application/zip")
+    parts.append(b"")
+    parts.append(data)
+    parts.append(("--" + boundary + "--").encode())
+    payload = b"\r\n".join(parts)
+    return api("POST", "/repos/%s/%s/releases/%s/attach_files" % (owner, repo, release_id),
+               raw=payload, ctype="multipart/form-data; boundary=" + boundary)
+
+
+def main():
+    if not TOKEN:
+        print("先把 GITEE_TOKEN 设上（Gitee → 设置 → 私人令牌）")
+        return 1
+    status, info = me()
+    if status != 200:
+        print("token 不对：", info)
+        return 1
+    owner = info.get("login")
+    print("登录为", owner)
+
+    status, repo = api("GET", "/repos/%s/%s?access_token=%s" % (owner, REPO, TOKEN))
+    if status == 404 and "--create" in sys.argv:
+        status, repo = create_repo(REPO)
+        print("建仓库：", status)
+    if status != 200:
+        print("仓库读不到，加 --create 试试：", str(repo)[:160])
+        return 1
+
+    tag = "app-latest"
+    status, rel = api("GET", "/repos/%s/%s/releases/tags/%s?access_token=%s" % (owner, REPO, tag, TOKEN))
+    if status != 200:
+        status, rel = create_release(owner, REPO, tag, "长征启动器（最新构建）",
+                                     "自动发布，跟着 GitHub 的最新构建走。")
+    if status not in (200, 201):
+        print("Release 出错：", rel)
+        return 1
+    print("Release:", rel.get("html_url"))
+
+    if os.path.isfile(ZIP):
+        for asset in rel.get("assets") or []:
+            if asset.get("name") == os.path.basename(ZIP):
+                api("DELETE", "/repos/%s/%s/releases/%s/attach_files/%s?access_token=%s"
+                    % (owner, REPO, rel["id"], asset["id"], TOKEN))
+        status, asset = upload_asset(owner, REPO, rel["id"], ZIP)
+        print("上传附件：", status)
+        if status in (200, 201):
+            print("下载地址：", asset.get("browser_download_url"))
+
+    version = {
+        "version": "1.1." + os.environ.get("BUILD_NUMBER", "0"),
+        "download": "https://gitee.com/%s/%s/releases/download/%s/changzheng-launcher.zip"
+                    % (owner, REPO, tag),
+        "notes": "Gitee 国内直链",
+    }
+    print("version.json 建议内容：")
+    print(json.dumps(version, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
