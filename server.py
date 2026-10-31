@@ -1234,29 +1234,17 @@ class Handler(BaseHTTPRequestHandler):
                     _sh3.rmtree(stage, ignore_errors=True)
                 with _zip3.ZipFile(src) as zf:
                     zf.extractall(stage)
+                self._json({"ok": True, "staged": stage, "auto": auto})
                 if auto:
-                    bat = os.path.join(BASE, "updates", "自动更新.bat")
-                else:
-                    bat = os.path.join(BASE, "updates", "应用更新.bat")
-                lines = [
-                    "@echo off",
-                    "chcp 65001 >nul",
-                    "timeout /t 3 >nul",
-                    "taskkill /IM electron.exe /F >nul 2>&1",
-                    "taskkill /IM 长征引擎.exe /F >nul 2>&1",
-                    "taskkill /IM 长征启动器.exe /F >nul 2>&1",
-                    "robocopy \"%s\" \"%s\" /E /IS /IT >nul" % (stage, BASE),
-                    "if exist \"%s\长征启动器.exe\" start \"\" \"%s\长征启动器.exe\"" % (BASE, BASE),
-                    "del \"%%~f0\"",
-                ]
-                with open(bat, "w", encoding="utf-8") as fh:
-                    fh.write(chr(10).join(lines))
-                self._json({"ok": True, "bat": bat, "auto": auto})
-                if auto:
+                    # 不再用 bat：先启动一个新的自己，新进程启动时会把 updates/new 覆盖进来
                     import subprocess as _sp4
-                    _sp4.Popen(["cmd", "/c", bat], creationflags=0x08000000,
-                               stdout=_sp4.DEVNULL, stderr=_sp4.DEVNULL)
-                    threading.Timer(1.5, lambda: os._exit(0)).start()
+                    exe = os.path.join(BASE, "长征启动器.exe")
+                    try:
+                        if os.path.isfile(exe):
+                            _sp4.Popen([exe], cwd=BASE, creationflags=0x08000000)
+                    except Exception:
+                        pass
+                    threading.Timer(1.0, lambda: os._exit(0)).start()
             except Exception as error:
                 self._json({"ok": False, "error": str(error)})
             return
