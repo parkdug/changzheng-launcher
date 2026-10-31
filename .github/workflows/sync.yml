@@ -35,6 +35,7 @@ jobs:
           Copy-Item icon.ico out\
           Copy-Item -Recurse web out\web
           "长征启动器 - 解压后双击 长征启动器.exe 就能用" | Out-File -Encoding utf8 out\使用说明.txt
+          Set-Content -Path outersion.txt -Value "1.1.${{ github.run_number }}" -Encoding utf8
           Compress-Archive -Path out\* -DestinationPath changzheng-launcher.zip -Force
 
       - name: 发到 Gitee
