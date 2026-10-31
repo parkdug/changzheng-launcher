@@ -340,9 +340,14 @@ class Handler(BaseHTTPRequestHandler):
                                     "explain": "你把整合包拖到聊天框里，我就能直接导进来。"})
                         return
                     try:
+                        progress("开始导入整合包（0/100）")
                         result = import_pack.run(path, ver_now, core.MC_DIR, progress)
+                        progress("整合包导入完成（100/100）")
+                        STATE["last_import"] = result
                         self._json({"ok": True, "kind": "chat", "items": [], "query": "",
-                                    "explain": "导入完成：%s 个文件进 %s 了。" % (result.get("mods", 0), ver_now)})
+                                    "explain": "导好了：%s 个文件进了 %s。%s"
+                                               % (result.get("mods", 0), ver_now,
+                                                  "重启游戏就能看到。" if result.get("mods") else "")})
                     except Exception as error:
                         self._json({"ok": True, "kind": "chat", "items": [], "query": "",
                                     "explain": "导入失败：%s" % error})
@@ -503,6 +508,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     info["tools"][name] = False
             self._json(info)
+            return
+        if path == "/api/import/result":
+            self._json({"ok": True, "result": STATE.get("last_import") or None,
+                        "busy": STATE.get("busy", False)})
             return
         if path == "/api/saves":
             ver = (query.get("version") or [""])[0] or (STATE.get("chosen") or "")
@@ -749,9 +758,10 @@ class Handler(BaseHTTPRequestHandler):
 
             def work():
                 STATE["busy"] = True
+                progress("开始导入整合包（0/100）")
                 try:
                     result = import_pack.run(path, ver, core.MC_DIR, progress)
-                    progress("整合包导入完成：%s 个文件" % result.get("mods", 0))
+                    progress("整合包导入完成（100/100）：%s 个文件" % result.get("mods", 0))
                     STATE["last_import"] = result
                 except Exception as error:
                     progress("导入失败：%s" % error)
