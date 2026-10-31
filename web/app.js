@@ -769,11 +769,15 @@ $("#crashBtn")?.addEventListener("click", async () => {
 
 $("#reloadBtn")?.addEventListener("click", () => location.reload(true));
 $("#checkUpdateBtn")?.addEventListener("click", async () => {
+  const btn = $("#checkUpdateBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "检查中…"; }
+  toast("正在查最新版本…", 3000);
+  const done = () => { if (btn) { btn.disabled = false; btn.textContent = "检查更新"; } };
   const url = $("#setUpdateUrl").value.trim();
   await api("/api/config", { update_url: url });
   const r = await api("/api/check_update");
-  if (!r.ok) { toast("检查失败：" + r.error); return; }
-  if (!r.newer) { toast("已经是最新版（" + r.current + "）", 4000); return; }
+  if (!r.ok) { toast("检查失败：" + r.error, 5000); done(); return; }
+  if (!r.newer) { toast("已经是最新版（" + r.current + "）", 4000); done(); return; }
   toast("有新版本 " + r.latest + "，开始下载…", 4000);
   if (r.url) {
     await api("/api/download_update", { url: r.url });
@@ -790,11 +794,13 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
         } else {
           toast("更新包装好了，在 updates 文件夹里手动覆盖", 6000);
         }
+        done();
         return;
       }
-      if (msg.indexOf("失败") >= 0) { toast(msg, 6000); return; }
+      if (msg.indexOf("失败") >= 0) { toast(msg, 6000); done(); return; }
     }
     toast("下载太慢了，可以稍后在设置里再试", 5000);
+    done();
   } else {
     toast("有新版但没给下载地址：" + (r.notes || ""), 6000);
   }
