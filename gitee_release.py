@@ -18,7 +18,7 @@ import urllib.request
 TOKEN = os.environ.get("GITEE_TOKEN") or ""
 API = "https://gitee.com/api/v5"
 REPO = os.environ.get("GITEE_REPO") or "changzheng-launcher"
-ZIP = r"D:\DSH work\changzheng-launcher.zip"
+ZIP = os.environ.get("GITEE_ZIP") or os.path.join(os.getcwd(), "changzheng-launcher.zip")
 
 
 def api(method, path, payload=None, raw=None, ctype="application/json"):
@@ -51,7 +51,7 @@ def create_repo(name, private=False):
 def create_release(owner, repo, tag, name, body):
     return api("POST", "/repos/%s/%s/releases" % (owner, repo), {
         "access_token": TOKEN, "tag_name": tag, "name": name, "body": body,
-        "target_commitish": "master",
+        "target_commitish": "main",
     })
 
 
@@ -114,7 +114,7 @@ def main():
 
     tag = os.environ.get("GITEE_TAG") or "app-latest"
     status, rel = api("GET", "/repos/%s/%s/releases/tags/%s?access_token=%s" % (owner, REPO, tag, TOKEN))
-    if status != 200:
+    if status != 200 or not isinstance(rel, dict):
         status, rel = create_release(owner, REPO, tag, "长征启动器（最新构建）",
                                      "自动发布，跟着 GitHub 的最新构建走。")
     if status not in (200, 201):
