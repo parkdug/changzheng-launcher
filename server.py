@@ -34,7 +34,9 @@ import tools
 import translate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEB = os.path.join(HERE, "web")
+# exe 旁边有 web 就用外部的，这样单独更新界面不用重新打包
+_EXTERNAL_WEB = os.path.join(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE, "web")
+WEB = _EXTERNAL_WEB if os.path.isdir(_EXTERNAL_WEB) else os.path.join(HERE, "web")
 BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else HERE
 CONFIG = os.path.join(BASE, "config.json")
 PORT = int(os.environ.get("CZ_PORT", "8765"))
@@ -89,7 +91,7 @@ def load_config():
             "threads": 8, "speed_limit": 0, "auto_memory": False, "skin": "随机",
             "update_hint": False, "test_hint": False, "auto_chinese": True,
             "launcher_update": "有新版本时自动下载", "announce": "显示所有公告",
-            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@latest/version.json"}
+            "cache_dir": "", "anonymous": True, "mod_filename": "[标题] 版本", "deepseek_key": "", "update_url": "https://github.com/parkdug/changzheng-launcher/releases/download/app-latest/version.json"}
 
 
 def save_config(cfg):
@@ -953,9 +955,7 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         resp = _ur.urlopen(req2, timeout=120)
                     except Exception:
-                        import ssl as _ssl
-                        resp = _ur.urlopen(req2, timeout=120, context=_ssl.create_default_context(
-                            cafile=certifi.where()))
+                        resp = _ur.urlopen(req2, timeout=120, context=tools._ctx())
                     with resp as resp, open(target, "wb") as handle:
                         total = int(resp.headers.get("Content-Length") or 0)
                         done = 0
@@ -1048,8 +1048,27 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": False, "error": "unknown"}, 404)
 
 
+def _bind_any(preferred=8765, tries=12):
+    """端口被占就往后找，别让“已经有一个在跑”变成打不开网页。"""
+    global PORT, STATE
+    for port in range(preferred, preferred + tries):
+        try:
+            httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            PORT = port
+            STATE["port"] = port
+            try:
+                with open(os.path.join(BASE, "port.txt"), "w", encoding="utf-8") as fh:
+                    fh.write(str(port))
+            except Exception:
+                pass
+            return httpd
+        except OSError:
+            continue
+    raise RuntimeError("没有可用端口（%d~%d）" % (preferred, preferred + tries))
+
+
 def main(open_browser_tab=True):
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    server = _bind_any(PORT)
     url = "http://127.0.0.1:%d/" % PORT
     print("长征启动器服务：%s" % url, flush=True)
 
