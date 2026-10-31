@@ -1,0 +1,8 @@
+{
+  "name": "changzheng-launcher",
+  "version": "1.0.0",
+  "main": "main.js",
+  "dependencies": {
+    "electron": "^45.1.0"
+  }
+}
