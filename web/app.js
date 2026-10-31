@@ -430,11 +430,11 @@ async function loadCommunity(reset) {
     const icon = item.icon
       ? '<img class="mod-icon" src="' + item.icon + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
       : '<div class="mod-icon"></div>';
-    const shown = item.zh ? item.zh : item.title;
-    const sub = item.zh ? '<span class="en">' + item.title + "</span> · " : "";
+    const shown = escHtml(item.zh ? item.zh : item.title);
+    const sub = item.zh ? '<span class="en">' + escHtml(item.title) + "</span> · " : "";
     el.innerHTML = icon +
       '<div class="mod-info"><div class="mod-title">' + shown + '</div><div class="mod-desc">' + sub +
-      (item.desc || "") + '</div>' +
+      escHtml(item.desc || "") + '</div>' +
       ((item.versions && item.versions.length) ? '<div class="mod-vers">支持 ' + item.versions.slice(-5).join(" · ") + "</div>" : "") +
       '</div><div class="mod-meta"><span class="dl">' +
       (item.downloads || 0).toLocaleString() + ' 下载</span><button class="btn primary">装这个</button></div>';
@@ -622,7 +622,7 @@ async function ask() {
     const icon = item.icon ? '<img class="mod-icon" src="' + item.icon + '" loading="lazy">' : '<div class="mod-icon"></div>';
     el.innerHTML = icon + '<div class="mod-info"><div class="mod-title">' + (item.zh || item.title) +
       '</div><div class="mod-desc">' + (item.zh ? '<span class="en">' + item.title + '</span> · ' : "") +
-      (item.desc || "") + '</div>' +
+      escHtml(item.desc || "") + '</div>' +
       (item.reason ? '<div class="mod-reason">' + item.reason + '</div>' : '') +
       '</div><div class="mod-meta"><button class="btn primary">装这个</button></div>';
     el.querySelector("button").addEventListener("click", async () => {
