@@ -76,6 +76,23 @@ def upload_asset(owner, repo, release_id, path):
                raw=payload, ctype="multipart/form-data; boundary=" + boundary)
 
 
+def update_version_json(owner, repo, tag, filename, version):
+    """把仓库里的 version.json 改成指向 Gitee 附件。"""
+    path = "version.json"
+    status, info = api("GET", "/repos/%s/%s/contents/%s?access_token=%s&ref=main"
+                       % (owner, repo, path, TOKEN))
+    payload = {
+        "access_token": TOKEN,
+        "content": __import__("base64").b64encode(
+            json.dumps(version, ensure_ascii=False, indent=2).encode()).decode(),
+        "message": "chore: 更新到 " + version.get("version", ""),
+        "branch": "main",
+    }
+    if status == 200 and isinstance(info, dict):
+        payload["sha"] = info.get("sha", "")
+    return api("PUT", "/repos/%s/%s/contents/%s" % (owner, repo, path), payload)
+
+
 def main():
     if not TOKEN:
         print("先把 GITEE_TOKEN 设上（Gitee → 设置 → 私人令牌）")
@@ -95,7 +112,7 @@ def main():
         print("仓库读不到，加 --create 试试：", str(repo)[:160])
         return 1
 
-    tag = "app-latest"
+    tag = os.environ.get("GITEE_TAG") or "app-latest"
     status, rel = api("GET", "/repos/%s/%s/releases/tags/%s?access_token=%s" % (owner, REPO, tag, TOKEN))
     if status != 200:
         status, rel = create_release(owner, REPO, tag, "长征启动器（最新构建）",
@@ -121,8 +138,8 @@ def main():
                     % (owner, REPO, tag),
         "notes": "Gitee 国内直链",
     }
-    print("version.json 建议内容：")
-    print(json.dumps(version, ensure_ascii=False, indent=2))
+    st3, out3 = update_version_json(owner, REPO, tag, "changzheng-launcher.zip", version)
+    print("version.json 更新：", st3)
     return 0
 
 
