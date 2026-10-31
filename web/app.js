@@ -278,8 +278,35 @@ function renderVersions() {
           syncChosen(); toast("设为启动目标：" + item.id);
           return;
         }
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "安装中…";
         toast("开始安装 " + item.id);
-        await api("/api/install/vanilla", { id: item.id, source: state.source });
+        const started = await api("/api/install/vanilla", { id: item.id, source: state.source });
+        if (!started.ok) {
+          toast("安装没起来：" + started.error, 5000);
+          btn.disabled = false; btn.textContent = "安装";
+          return;
+        }
+        const t0 = Date.now();
+        let last = "";
+        while (Date.now() - t0 < 900000) {
+          await new Promise((r) => setTimeout(r, 2500));
+          const prog = await api("/api/progress");
+          last = prog.progress || last;
+          if (last.indexOf("失败") >= 0) { toast(last, 6000); break; }
+          const data = await api("/api/bootstrap");
+          state.versions = data.versions || [];
+          if (state.versions.some((v) => v.id === item.id)) {
+            state.chosen = item.id;
+            await api("/api/choose", { id: item.id });
+            syncChosen(); renderMyVersions(); renderVersions();
+            toast(item.id + " 装好了，已设为启动目标");
+            break;
+          }
+        }
+        btn.disabled = false;
+        btn.textContent = "安装";
       });
       rowsBox.appendChild(row);
     });
@@ -608,7 +635,19 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
   await api("/api/config", { update_url: url });
   const r = await api("/api/check_update");
   if (!r.ok) { toast("检查失败：" + r.error); return; }
-  toast(r.newer ? ("有新版本：" + r.latest) : "已经是最新版（" + r.current + "）", 4000);
+  if (!r.newer) { toast("已经是最新版（" + r.current + "）", 4000); return; }
+  toast("有新版本 " + r.latest + "，开始下载…", 4000);
+  if (r.url) {
+    await api("/api/download_update", { url: r.url });
+    setTimeout(async () => {
+      const p = await api("/api/progress");
+      if (p.progress && p.progress.indexOf("下好了") >= 0) {
+        toast("更新包在 updates 文件夹，解压覆盖就行", 6000);
+      }
+    }, 8000);
+  } else {
+    toast("有新版但没给下载地址：" + (r.notes || ""), 6000);
+  }
 });
 
 $("#exportBtn")?.addEventListener("click", () => {
