@@ -491,12 +491,26 @@ $("#importFile")?.addEventListener("change", async (e) => {
   const r = await uploadFile(file);
   if (!r.ok) { toast("上传失败：" + r.error); return; }
   const res = await api("/api/import", { path: r.path, version: state.chosen });
-  toast(res.ok ? "开始导入（看底部进度）" : "导入失败：" + res.error);
-  setTimeout(async () => {
-    const d = await api("/api/bootstrap");
-    state.versions = d.versions || [];
-    renderMyVersions();
-  }, 4000);
+  if (!res.ok) { toast("导入失败：" + res.error); return; }
+  pushMsg("小助手", "正在导入「" + r.name + "」，底部能看到进度。", false);
+  const t0 = Date.now();
+  while (Date.now() - t0 < 900000) {
+    await new Promise((ok) => setTimeout(ok, 2500));
+    const pg = await api("/api/progress");
+    const msg = pg.progress || "";
+    if (msg.indexOf("导入完成") >= 0 || msg.indexOf("失败") >= 0) {
+      const r2 = await api("/api/import/result");
+      const result = r2.result || {};
+      pushMsg("小助手", msg.indexOf("失败") >= 0
+        ? ("导入没成功：" + msg)
+        : ("导好了：" + (result.mods || 0) + " 个文件，重启游戏就能看到。"), false);
+      toast("导入结束");
+      break;
+    }
+  }
+  const d = await api("/api/bootstrap");
+  state.versions = d.versions || [];
+  renderMyVersions();
 });
 
 function scrollChat() {
