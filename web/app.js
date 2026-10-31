@@ -33,9 +33,68 @@ function showPage(name) {
   $$(".rail-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === name));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + name));
   if (name === "files" && window.loadFiles) loadFiles();
+  if (name === "skins" && window.loadSkins) loadSkins();
 }
 const CZ_PAGE = (location.search.match(/[?&]page=(\w+)/) || [])[1];
 if (CZ_PAGE) setTimeout(() => showPage(CZ_PAGE), 600);
+
+async function loadSkins() {
+  const grid = $("#skinsGrid");
+  if (!grid) return;
+  grid.innerHTML = '<p class="tiny">正在读…</p>';
+  const r = await api("/api/skins");
+  if (!r.ok) { grid.innerHTML = '<p class="tiny">读不到：' + r.error + "</p>"; return; }
+  if (!r.items.length) {
+    grid.innerHTML = '<div class="empty-hint"><b>还没有皮肤</b><p>点右上角「添加皮肤」选一张 PNG（64x64 或 64x32 的皮肤文件），放进来以后开游戏前挑一个。</p></div>';
+    return;
+  }
+  grid.innerHTML = r.items.map((it) =>
+    '<div class="skin-card' + (it.active ? " active" : "") + '" data-name="' + it.name + '">' +
+    '<span class="skin-del" data-del="' + it.name + '">×</span>' +
+    '<img src="/api/skin/file?name=' + encodeURIComponent(it.name) + '">' +
+    "<b>" + it.name + "</b></div>").join("");
+  grid.querySelectorAll(".skin-card").forEach((card) => card.addEventListener("click", async (e) => {
+    if (e.target.classList.contains("skin-del")) return;
+    const name = card.getAttribute("data-name");
+    const res = await api("/api/skin/select", { name: name });
+    toast(res.ok ? "默认皮肤：" + name : "设置失败：" + res.error);
+    loadSkins();
+  }));
+  grid.querySelectorAll("[data-del]").forEach((btn) => btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const name = btn.getAttribute("data-del");
+    if (!confirm("删掉皮肤 " + name + "？会移到 skins/_trash")) return;
+    const res = await api("/api/skin/delete", { name: name });
+    toast(res.ok ? "删掉了" : "删除失败：" + res.error);
+    loadSkins();
+  }));
+}
+
+async function uploadSkin(file) {
+  const res = await fetch("/api/skin/upload", {
+    method: "POST",
+    headers: { "X-Filename": encodeURIComponent(file.name) },
+    body: file,
+  });
+  return res.json();
+}
+
+$("#skinAdd")?.addEventListener("click", () => $("#skinFile")?.click());
+$("#skinFile")?.addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const r = await uploadSkin(file);
+  toast(r.ok ? "加进来了：" + r.name : "失败：" + r.error);
+  loadSkins();
+});
+$("#skinInstallMod")?.addEventListener("click", async () => {
+  toast("正在找适配当前版本的 CustomSkinLoader…");
+  const r = await api("/api/skin/installmod", { version: state.chosen });
+  toast(r.ok ? "装好了：" + r.file : "没装上：" + r.error, 5000);
+});
+$("#skinLittleSkin")?.addEventListener("click", () => {
+  window.open("https://littleskin.cn/", "_blank");
+});
 
 async function loadFiles() {
   const sg = $("#savesGrid");
