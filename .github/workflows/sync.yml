@@ -68,6 +68,7 @@ jobs:
             version.json
 
       - name: 提交 version.json
+        continue-on-error: true
         shell: pwsh
         run: |
           git config user.name "github-actions"
