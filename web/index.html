@@ -138,6 +138,15 @@
         <div class="srow">
           <label class="checkline"><input type="checkbox" id="onlineMode" checked>正版校验（勾着 = 只有微软正版能进；不勾 = 离线模式，谁拿到地址都能进）</label>
         </div>
+        <div class="direct-card" id="directCard">
+          <div class="sec-title">直接联机 <span class="tiny">不用内网穿透，走公网 IPv6 或虚拟局域网</span></div>
+          <div id="directInfo" class="tiny">点「检测网络」看看你适合哪种。</div>
+          <div class="quick-row">
+            <button class="btn ghost" id="directCheck">检测网络</button>
+            <button class="btn ghost" id="directFirewall">开放 25565 防火墙</button>
+          </div>
+        </div>
+
         <div class="net-info" id="netInfo">还没开始。局域网地址会显示在这里。</div>
       </div>
     </section>
