@@ -772,6 +772,39 @@ $("#crashBtn")?.addEventListener("click", async () => {
 $("#reloadBtn")?.addEventListener("click", () => location.reload(true));
 $("#checkUpdateBtn")?.addEventListener("click", async () => {
   const btn = $("#checkUpdateBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "更新中…"; }
+  const done = () => { if (btn) { btn.disabled = false; btn.textContent = "一键更新"; } };
+  toast("正在查最新版本…", 2500);
+  const url = ($("#setUpdateUrl") || {}).value || "";
+  if (url) await api("/api/config", { update_url: url.trim() });
+  const r = await api("/api/check_update");
+  if (!r.ok) { toast("检查失败：" + r.error, 5000); done(); return; }
+  if (!r.newer) { toast("已经是最新版（" + r.current + "）", 4000); done(); return; }
+  toast("有新版 " + r.latest + "，开始下载…", 4000);
+  await api("/api/download_update", { url: r.url });
+  const t0 = Date.now();
+  while (Date.now() - t0 < 600000) {
+    await new Promise((res) => setTimeout(res, 2000));
+    const pg = await api("/api/progress");
+    const msg = pg.progress || "";
+    if (msg.indexOf("下好了") >= 0) {
+      toast("下好了，正在自动替换并重启…", 8000);
+      const ap = await api("/api/update/apply", { auto: true });
+      if (!ap.ok) {
+        toast("自动替换失败：" + ap.error + "，再点一次试试", 7000);
+        done();
+      }
+      return;
+    }
+    if (msg.indexOf("失败") >= 0) { toast(msg, 6000); done(); return; }
+  }
+  toast("下载超时了，过会儿再点一次", 5000);
+  done();
+});
+
+$("#reloadBtn")?.addEventListener("click", () => location.reload(true));
+$("#checkUpdateBtn")?.addEventListener("click", async () => {
+  const btn = $("#checkUpdateBtn");
   if (btn) { btn.disabled = true; btn.textContent = "检查中…"; }
   toast("正在查最新版本…", 3000);
   const done = () => { if (btn) { btn.disabled = false; btn.textContent = "检查更新"; } };
