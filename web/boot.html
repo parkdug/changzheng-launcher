@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>长征启动器</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #FBF3ED; font-family: "Microsoft YaHei", sans-serif; }
+  .wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #4A3A33; }
+  .star { color: #9E1B1B; font-size: 44px; }
+  h1 { font-size: 20px; margin: 14px 0 6px; }
+  p { font-size: 13px; color: #8A7365; margin: 4px 0; }
+  .bar { width: 260px; height: 6px; border-radius: 999px; background: #EFDDD2; overflow: hidden; margin: 18px 0; }
+  .bar i { display: block; height: 100%; width: 30%; background: #9E1B1B; border-radius: 999px; animation: run 1.2s infinite ease-in-out; }
+  @keyframes run { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+  button { margin-top: 14px; padding: 10px 22px; border-radius: 12px; border: 0; background: #9E1B1B; color: #fff; font-size: 14px; cursor: pointer; }
+  button.ghost { background: #FFF4EE; color: #9E1B1B; border: 1px solid #E6C9BC; }
+  .hide { display: none; }
+  code { font-size: 12px; color: #A08C80; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="star">★</div>
+  <h1 id="title">正在启动长征启动器…</h1>
+  <div class="bar" id="bar"><i></i></div>
+  <p id="hint">后端服务起来后会自动进入界面</p>
+  <div id="actions" class="hide">
+    <button onclick="retry()">重试</button>
+    <button class="ghost" onclick="openLog()">看日志</button>
+  </div>
+  <code id="detail"></code>
+</div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const port = params.get("port") || "8765";
+  const target = "http://127.0.0.1:" + port + "/";
+  let tries = 0;
+
+  function fail(msg) {
+    document.getElementById("title").textContent = "后端没起来";
+    document.getElementById("bar").classList.add("hide");
+    document.getElementById("hint").textContent = "可能被杀毒软件拦了，或者端口被占。点重试再试一次。";
+    document.getElementById("actions").classList.remove("hide");
+    document.getElementById("detail").textContent = msg || "";
+  }
+
+  async function probe() {
+    tries += 1;
+    try {
+      const resp = await fetch(target + "api/ping?t=" + Date.now(), { cache: "no-store" });
+      if (resp.ok) {
+        location.replace(target);
+        return;
+      }
+    } catch (e) {
+      if (!window.__lastErr) window.__lastErr = String(e);
+    }
+    if (tries > 40) { fail(window.__lastErr || ""); return; }
+    setTimeout(probe, 500);
+  }
+
+  function retry() {
+    tries = 0;
+    window.__lastErr = "";
+    document.getElementById("title").textContent = "正在启动长征启动器…";
+    document.getElementById("bar").classList.remove("hide");
+    document.getElementById("actions").classList.add("hide");
+    probe();
+  }
+
+  function openLog() {
+    const p = params.get("log") || "";
+    if (p) location.href = "file:///" + p.replace(/\\/g, "/");
+  }
+
+  probe();
+</script>
+</body>
+</html>
