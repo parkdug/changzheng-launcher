@@ -15,6 +15,8 @@ os.environ.setdefault("DOTNET_ROOT", r"C:\Program Files\dotnet")
 
 import server  # noqa: E402
 
+WEB_DIR = server.WEB
+
 
 def wait_port(port, timeout=25):
     end = time.time() + timeout
@@ -103,9 +105,18 @@ def main():
         except Exception:
             pass
         return
-    if not run_window(url):
+    boot = os.path.join(WEB_DIR, "boot.html")
+    if os.path.isfile(boot):
+        try:
+            import pathlib as _pl
+            boot_url = _pl.Path(boot).as_uri() + "?port=%d" % port
+        except Exception:
+            boot_url = url
+    else:
+        boot_url = url
+    if not run_window(boot_url):
         import webbrowser
-        webbrowser.open(url)
+        webbrowser.open(boot_url)
     # 窗口开出来以后不能让进程退出，否则本地服务跟着没了，页面就会“拒绝连接”
     while True:
         time.sleep(3600)
