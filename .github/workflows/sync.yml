@@ -1,79 +1,79 @@
-name: sync
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-jobs:
-  build-and-publish:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: 装依赖
-        run: |
-          python -m pip install --upgrade pip
-          pip install certifi pillow pyinstaller pyyaml
-
-      - name: 打包
-        run: |
-          pyinstaller --onefile --windowed --name 长征启动器 --icon icon.ico --add-data "web;web" --runtime-tmpdir run main.py
-
-      - name: 组装发布包
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item "dist\长征启动器.exe" out\
-          Copy-Item icon.ico out\
-          Copy-Item -Recurse web out\web
-          "长征启动器 - 解压后双击 长征启动器.exe 就能用" | Out-File -Encoding utf8 out\使用说明.txt
-          Set-Content -Path outersion.txt -Value "1.1.${{ github.run_number }}" -Encoding utf8
-          Compress-Archive -Path out\* -DestinationPath changzheng-launcher.zip -Force
-
-      - name: 发到 Gitee
-        continue-on-error: true
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          BUILD_NUMBER: ${{ github.run_number }}
-        run: python gitee_release.py --create
-
-      - name: 写 version.json
-        shell: pwsh
-        run: |
-          $run = "${{ github.run_number }}"
-          $obj = @{
-            version  = "1.1.$run"
-            download = "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-launcher.zip"
-            notes    = "自动构建 #$run"
-          }
-          $obj | ConvertTo-Json | Out-File -Encoding utf8 version.json
-
-      - name: 发布到 GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: app-latest
-          name: 长征启动器（最新构建）
-          prerelease: true
-          body: |
-            自动构建，跟着 main 分支走。版本号 1.1.${{ github.run_number }}
-          files: |
-            changzheng-launcher.zip
-            version.json
-
-      - name: 提交 version.json
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add version.json
-          git commit -m "chore: version ${{ github.run_number }}" 2>$null
-          if ($LASTEXITCODE -eq 0) { git push }
+name: sync
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install certifi pillow pyinstaller pyyaml
+
+      - name: 打包
+        run: |
+          pyinstaller --onefile --windowed --name 长征启动器 --icon icon.ico --add-data "web;web" --runtime-tmpdir run main.py
+
+      - name: 组装发布包
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item "dist\长征启动器.exe" out\
+          Copy-Item icon.ico out\
+          Copy-Item -Recurse web out\web
+          "长征启动器 - 解压后双击 长征启动器.exe 就能用" | Out-File -Encoding utf8 out\使用说明.txt
+          Set-Content -Path "out/version.txt" -Value "1.1.${{ github.run_number }}" -Encoding utf8
+          Compress-Archive -Path out\* -DestinationPath changzheng-launcher.zip -Force
+
+      - name: 发到 Gitee
+        continue-on-error: true
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: python gitee_release.py --create
+
+      - name: 写 version.json
+        shell: pwsh
+        run: |
+          $run = "${{ github.run_number }}"
+          $obj = @{
+            version  = "1.1.$run"
+            download = "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-launcher.zip"
+            notes    = "自动构建 #$run"
+          }
+          $obj | ConvertTo-Json | Out-File -Encoding utf8 version.json
+
+      - name: 发布到 GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-latest
+          name: 长征启动器（最新构建）
+          prerelease: true
+          body: |
+            自动构建，跟着 main 分支走。版本号 1.1.${{ github.run_number }}
+          files: |
+            changzheng-launcher.zip
+            version.json
+
+      - name: 提交 version.json
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add version.json
+          git commit -m "chore: version ${{ github.run_number }}" 2>$null
+          if ($LASTEXITCODE -eq 0) { git push }
