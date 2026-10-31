@@ -111,6 +111,7 @@ def check(current="1.0.0", extra=""):
                     results.append({
                         "ok": True, "latest": latest, "current": current,
                         "url": data.get("download") or "", "notes": data.get("notes") or "",
+                        "parts": data.get("parts") or [],
                         "newer": _ver_key(latest) > _ver_key(current), "source": src_label,
                     })
         except Exception:
@@ -226,7 +227,40 @@ def _stream_download(real, target, say):
     return os.path.getsize(target)
 
 
-def download(url, target, progress=None, tries=2, chunks=24):
+def _download_parts(parts, target, say):
+    """分卷：一个个下，拼成完整 zip。"""
+    tmp_files = []
+    for idx, part_url in enumerate(parts, 1):
+        tmp = "%s.part%d" % (target, idx)
+        say("下载分卷 %d/%d" % (idx, len(parts)))
+        ok = False
+        for attempt in range(3):
+            try:
+                _stream_download(part_url, tmp, lambda m: say("分卷 %d/%d %s" % (idx, len(parts), m)))
+                ok = True
+                break
+            except Exception:
+                continue
+        if not ok:
+            raise RuntimeError("分卷 %d 下载失败" % idx)
+        tmp_files.append(tmp)
+    with open(target, "wb") as out:
+        for tmp in tmp_files:
+            with open(tmp, "rb") as src:
+                while True:
+                    chunk = src.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+    for tmp in tmp_files:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+    return target
+
+
+def download(url, target, progress=None, tries=2, chunks=24, parts=None):
     say = progress or (lambda _t: None)
     os.makedirs(os.path.dirname(target), exist_ok=True)
 
@@ -241,6 +275,19 @@ def download(url, target, progress=None, tries=2, chunks=24):
     if os.path.isfile(target) and valid(target):
         say("更新包下好了（100/100）")
         return target, ""
+
+    if parts and not url:
+        url = parts[0]
+    if parts:
+        try:
+            say("共 %d 个分卷" % len(parts))
+            _download_parts(parts, target, say)
+            if not valid(target):
+                raise RuntimeError("合并后的包坏了")
+            say("更新包下好了（100/100）")
+            return target, ""
+        except Exception as error:
+            say("分卷下载失败：%s，换单文件" % str(error)[:40])
 
     gitee_first = gitee_asset()
     if gitee_first:
