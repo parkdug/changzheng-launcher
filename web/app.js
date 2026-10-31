@@ -787,12 +787,11 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
       const pg = await api("/api/progress");
       const msg = pg.progress || "";
       if (msg.indexOf("下好了") >= 0) {
-        const ap = await api("/api/update/apply", {});
+        const ap = await api("/api/update/apply", { auto: true });
         if (ap.ok) {
-          toast("更新包下好了，运行「应用更新.bat」就会替换并重启", 8000);
-          await api("/api/reveal", { path: ap.bat });
+          toast("下载完成，正在自动更新并重启…", 8000);
         } else {
-          toast("更新包装好了，在 updates 文件夹里手动覆盖", 6000);
+          toast("自动更新失败：" + ap.error, 6000);
         }
         done();
         return;
