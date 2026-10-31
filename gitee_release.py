@@ -130,13 +130,14 @@ def main():
     print("Release:", rel.get("html_url"))
 
     if os.path.isfile(ZIP):
-        for asset in rel.get("assets") or []:
-            if asset.get("name") == os.path.basename(ZIP):
+        files = rel.get("assets") or rel.get("attach_files") or []
+        for asset in files:
+            if asset.get("name") == os.path.basename(ZIP) and asset.get("id"):
                 api("DELETE", "/repos/%s/%s/releases/%s/attach_files/%s?access_token=%s"
                     % (owner, REPO, rel["id"], asset["id"], TOKEN))
         status, asset = upload_asset(owner, REPO, rel["id"], ZIP)
         print("上传附件：", status)
-        if status in (200, 201):
+        if status in (200, 201) and isinstance(asset, dict):
             print("下载地址：", asset.get("browser_download_url"))
 
     version = {
