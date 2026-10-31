@@ -680,6 +680,7 @@ function renderSettings() {
   $("#setClientId").value = c.client_id || "";
   $("#setCf").value = c.curseforge_key || "";
   if ($("#setUpdateUrl")) $("#setUpdateUrl").value = c.update_url || "";
+  if ($("#setAutoUpdate")) $("#setAutoUpdate").checked = c.auto_update !== false;
   if ($("#verLabel")) $("#verLabel").textContent = state.version || "-";
   if ($("#setDeepseek")) $("#setDeepseek").value = c.deepseek_key || "";
   if (c.auto_memory) $("#memAuto").checked = true; else $("#memCustom").checked = true;
@@ -707,6 +708,7 @@ $("#saveBtn")?.addEventListener("click", async () => {
     client_id: $("#setClientId").value,
     curseforge_key: $("#setCf").value,
     update_url: $("#setUpdateUrl") ? $("#setUpdateUrl").value : "",
+    auto_update: $("#setAutoUpdate") ? $("#setAutoUpdate").checked : true,
     deepseek_key: $("#setDeepseek") ? $("#setDeepseek").value : "",
   };
   const r = await api("/api/config", body);
