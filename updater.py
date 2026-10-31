@@ -1,4 +1,7 @@
-"""updater — 检查更新与下载更新：并行多源、短超时、断点续传、走国内加速。"""
+"""updater — 检查更新与下载更新。
+
+下载策略：先给所有镜像做测速，挑最快的；然后多线程分块下载（8 线程），最后合并校验。
+"""
 
 import json
 import os
@@ -31,14 +34,12 @@ def _ctx():
     return ctx
 
 
-def _fetch(url, timeout=5):
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
+def _open(url, timeout=30, headers=None):
+    req = urllib.request.Request(url, headers=headers or {"User-Agent": UA})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return urllib.request.urlopen(req, timeout=timeout)
     except Exception:
-        with urllib.request.urlopen(req, timeout=timeout, context=_ctx()) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        return urllib.request.urlopen(req, timeout=timeout, context=_ctx())
 
 
 def _ver_key(text):
@@ -51,9 +52,18 @@ SOURCES = [
     "https://github.com/parkdug/changzheng-launcher/releases/download/app-latest/version.json",
 ]
 
+MIRRORS = (
+    "https://gh-proxy.com/",
+    "https://ghproxy.net/",
+    "https://ghfast.top/",
+    "https://hub.gitmirror.com/",
+    "https://gh.llkk.cc/",
+    "https://ghproxy.cc/",
+    "",
+)
+
 
 def check(current="1.0.0", extra=""):
-    """并行问几个源，5 秒超时，取版本号最大的。"""
     if CACHE["data"] and time.time() - CACHE["ts"] < 300:
         data = dict(CACHE["data"])
         data["newer"] = data.get("latest") != current
@@ -66,7 +76,8 @@ def check(current="1.0.0", extra=""):
 
     def worker(src):
         try:
-            data = _fetch(src, 5)
+            with _open(src, 5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
             latest = str(data.get("version") or "")
             if latest:
                 with lock:
@@ -83,7 +94,6 @@ def check(current="1.0.0", extra=""):
         th.start()
     for th in threads:
         th.join(6)
-
     if not results:
         return {"ok": False, "error": "几个源都没连上，过会儿再试"}
     best = max(results, key=lambda r: _ver_key(r["latest"]))
@@ -92,32 +102,49 @@ def check(current="1.0.0", extra=""):
     return best
 
 
-MIRRORS = (
-    "https://gh-proxy.com/",
-    "https://ghproxy.net/",
-    "https://ghfast.top/",
-    "",
-)
-
-
-def remote_size(url, timeout=10):
+def _probe(url, size=200000, timeout=6):
+    started = time.time()
     try:
-        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return int(resp.headers.get("Content-Length") or 0)
+        with _open(url, timeout, {"User-Agent": UA, "Range": "bytes=0-%d" % size}) as resp:
+            got = len(resp.read(size + 1024))
+        return got / max(0.001, time.time() - started)
     except Exception:
         return 0
 
 
-def download(url, target, progress=None, tries=4):
-    """下载更新包：镜像轮换 + Range 续传；已经下全了就直接用。"""
+def speed_test(url):
+    scored = []
+
+    def worker(prefix):
+        real = (prefix + url) if prefix else url
+        scored.append((_probe(real), real))
+
+    threads = [threading.Thread(target=worker, args=(p,), daemon=True) for p in MIRRORS]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(8)
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [(speed, real) for speed, real in scored if speed > 0]
+
+
+def _fetch_range(real, start, end, path, counter, size, say, lock):
+    headers = {"User-Agent": UA, "Range": "bytes=%d-%d" % (start, end)}
+    with _open(real, 60, headers) as resp:
+        data = resp.read()
+    with open(path, "wb") as handle:
+        handle.write(data)
+    with lock:
+        counter[0] += len(data)
+        done = counter[0]
+    if size:
+        say("更新包 %d%%" % int(done * 100 / size))
+
+
+def download(url, target, progress=None, tries=2, chunks=24):
     say = progress or (lambda _t: None)
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    want = 0
-    for prefix in MIRRORS:
-        want = remote_size((prefix + url) if prefix else url)
-        if want:
-            break
+
     def valid(path):
         try:
             import zipfile
@@ -126,58 +153,63 @@ def download(url, target, progress=None, tries=4):
         except Exception:
             return False
 
-    if want and os.path.isfile(target):
-        have = os.path.getsize(target)
-        if have == want:
-            if valid(target):
-                say("更新包下好了（100/100）")
-                return target, ""
-            try:
-                os.remove(target)
-            except Exception:
-                pass
-        if have > want:
-            try:
-                os.remove(target)
-            except Exception:
-                pass
-    last = None
-    for attempt in range(tries):
-        for prefix in MIRRORS:
-            real = prefix + url if prefix else url
-            try:
-                have = os.path.getsize(target) if os.path.isfile(target) else 0
-                headers = {"User-Agent": UA}
-                if have:
-                    headers["Range"] = "bytes=%d-" % have
-                req = urllib.request.Request(real, headers=headers)
+    if os.path.isfile(target) and valid(target):
+        say("更新包下好了（100/100）")
+        return target, ""
+
+    candidates = speed_test(url)
+    if not candidates:
+        candidates = [(0, url)]
+    say("找到 %d 条可用线路，正在挑最快的下" % len(candidates))
+
+    for speed, real in candidates[:3]:
+        try:
+            head = _open(real, 20, {"User-Agent": UA, "Range": "bytes=0-0"})
+            size = 0
+            content_range = head.headers.get("Content-Range") or ""
+            if "/" in content_range:
                 try:
-                    resp = urllib.request.urlopen(req, timeout=30)
+                    size = int(content_range.split("/")[-1])
                 except Exception:
-                    resp = urllib.request.urlopen(req, timeout=30, context=_ctx())
-                mode = "ab" if have and getattr(resp, "status", 200) == 206 else "wb"
-                if mode == "wb":
-                    have = 0
-                total = int(resp.headers.get("Content-Length") or 0) + have
-                done = have
-                with resp, open(target, mode) as handle:
-                    while True:
-                        chunk = resp.read(1 << 20)
-                        if not chunk:
-                            break
-                        handle.write(chunk)
-                        done += len(chunk)
-                        if total:
-                            say("更新包 %d%%" % int(done * 100 / total))
-                size = os.path.getsize(target)
-                if total and size < total * 0.99:
-                    raise RuntimeError("没下完")
-                if not valid(target):
-                    raise RuntimeError("包坏了")
-                say("更新包下好了（100/100）")
-                return target, ""
-            except Exception as error:
-                last = error
-                say("线路断了，换一条重试…")
-                time.sleep(1)
-    return "", "下载失败：%s" % (str(last)[:80] if last else "未知")
+                    size = 0
+            if not size:
+                size = int(head.headers.get("Content-Length") or 0)
+            head.close()
+            if not size:
+                continue
+            tmp_dir = target + ".parts"
+            os.makedirs(tmp_dir, exist_ok=True)
+            step = max(1, size // chunks)
+            ranges = []
+            for i in range(chunks):
+                start = i * step
+                end = size - 1 if i == chunks - 1 else (start + step - 1)
+                if start <= end:
+                    ranges.append((start, end, os.path.join(tmp_dir, "part%d" % i)))
+            counter = [0]
+            lock = threading.Lock()
+            threads = [
+                threading.Thread(target=_fetch_range,
+                                 args=(real, s, e, path, counter, size, say, lock), daemon=True)
+                for s, e, path in ranges
+            ]
+            for th in threads:
+                th.start()
+            for th in threads:
+                th.join(180)
+            if counter[0] < size * 0.99:
+                raise RuntimeError("只下了 %d/%d" % (counter[0], size))
+            with open(target, "wb") as out:
+                for _s, _e, path in ranges:
+                    with open(path, "rb") as part:
+                        out.write(part.read())
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            if not valid(target):
+                raise RuntimeError("包坏了")
+            say("更新包下好了（100/100）")
+            return target, ""
+        except Exception as error:
+            say("这条线路不行（%s），换下一条" % str(error)[:40])
+            continue
+    return "", "所有线路都没下成功，过会儿再试"
