@@ -1,5 +1,5 @@
 {
   "version": "1.0.0",
-  "download": "",
-  "notes": "第一个公开版本"
+  "download": "https://github.com/parkdug/changzheng-launcher/releases/download/v1.0.0/changzheng-launcher.zip",
+  "notes": "第一个公开版本：版本安装、模组中文名、崩溃自动修复、三步开服、整合包导入导出。"
 }
