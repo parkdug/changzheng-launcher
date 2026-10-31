@@ -27,3 +27,27 @@ def apply_pending(base):
         except Exception:
             pass
     return moved > 0
+
+
+def cleanup_mei(base):
+    """清掉上次残留的 _MEI 解包目录（exe 从 run 目录解包时留下的）。"""
+    import shutil
+    import sys
+    areas = [os.path.join(base, "run"), os.path.join(base, "updates")]
+    keep = getattr(sys, "_MEIPASS", "")
+    removed = 0
+    for area in areas:
+        if not os.path.isdir(area):
+            continue
+        for name in os.listdir(area):
+            full = os.path.join(area, name)
+            if not os.path.isdir(full):
+                continue
+            if keep and os.path.abspath(full) in os.path.abspath(keep):
+                continue
+            try:
+                shutil.rmtree(full, ignore_errors=True)
+                removed += 1
+            except Exception:
+                pass
+    return removed
