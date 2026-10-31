@@ -97,11 +97,25 @@ def _version_of(exe):
         return 0
 
 
+_MAJOR_CACHE = {}
+
+
+def major_of(exe):
+    """java.exe 的大版本号（缓存，避免每次都起进程）。"""
+    if not exe:
+        return 0
+    if exe in _MAJOR_CACHE:
+        return _MAJOR_CACHE[exe]
+    major = _version_of(exe)
+    _MAJOR_CACHE[exe] = major
+    return major
+
+
 def pick(base, want):
     """本地有没有合适大版本的 java。"""
     best = None
     for exe in _scan(base):
-        major = _version_of(exe)
+        major = major_of(exe)
         if major == want or (want == 8 and major == 8):
             return exe, major
         if major and best is None:
