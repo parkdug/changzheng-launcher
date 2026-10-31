@@ -485,3 +485,11 @@ select, input[type=number], input[type=text] {
 
 .direct-card { margin-top: 16px; padding: 16px 18px; border: 1px dashed #E4D2C6; border-radius: 14px; background: #FFFAF6; }
 .direct-card .tiny { white-space: pre-wrap; line-height: 1.9; }
+
+.skins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; margin-top: 12px; }
+.skin-card { border: 1px solid #F1E4DA; border-radius: 12px; padding: 10px; background: #FFFCF9; text-align: center; cursor: pointer; position: relative; }
+.skin-card.active { border-color: var(--theme); box-shadow: 0 0 0 2px rgba(158, 27, 27, .12); }
+.skin-card img { width: 64px; height: 64px; image-rendering: pixelated; background: #F3E7DF; border-radius: 8px; }
+.skin-card b { display: block; font-size: 12px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skin-del { position: absolute; top: 6px; right: 6px; color: #C0AA9C; font-size: 14px; cursor: pointer; }
+.skin-del:hover { color: #C2352F; }
