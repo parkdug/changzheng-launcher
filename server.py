@@ -27,6 +27,7 @@ import assistant
 import downloader
 import mc_core as core
 import import_pack
+import jre
 import modgen
 import pack_tools
 import mods_api
@@ -86,7 +87,7 @@ def load_config():
     return {"client_id": "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb", "ram_mb": 4096,
             "profile": None, "theme": "red", "curseforge_key": "",
             "isolation": "隔离所有版本", "win_size": "默认", "window_title": "",
-            "custom_info": "PCL", "visible": "游戏启动后仍保持不变", "priority": "高",
+            "custom_info": "长征启动器", "visible": "游戏启动后仍保持不变", "priority": "高",
             "jvm_args": "", "java_path": "", "download_source": "优先官方，慢时换镜像",
             "threads": 8, "speed_limit": 0, "auto_memory": False, "skin": "随机",
             "update_hint": False, "test_hint": False, "auto_chinese": True,
@@ -786,6 +787,20 @@ class Handler(BaseHTTPRequestHandler):
                 progress("开始安装 %s（0/100）" % vid)
                 try:
                     downloader.install_vanilla(vid, core.MC_DIR, source, progress)
+                    try:
+                        try:
+                            _v = core.load_version(vid)
+                            _mc = _v.get("inheritsFrom") or _v.get("id") or vid
+                        except Exception:
+                            _mc = vid
+                        java_exe, major = jre.ensure(core.JAVA_DIR, _mc, progress)
+                        if java_exe and not cfg.get("java_path"):
+                            _c = load_config()
+                            _c["java_path"] = java_exe
+                            save_config(_c)
+                            progress("顺手装好了 Java %d（100/100）" % major)
+                    except Exception as java_error:
+                        progress("Java 没装上：%s" % str(java_error)[:60])
                     progress("%s 装好了（100/100）" % vid)
                 except Exception as error:
                     progress("安装失败：%s" % error)
