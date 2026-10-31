@@ -43,14 +43,35 @@ def _open(url, timeout=30, headers=None):
 
 
 def _ver_key(text):
-    return tuple(int(x) if x.isdigit() else 0 for x in str(text or "0").split("."))
+    """只取数字段比较，1.2.0 > 1.1.101 这种要先补齐长度。"""
+    import re as _re
+    nums = _re.findall(r"\d+", str(text or "0"))
+    if not nums:
+        return (0,)
+    parts = [int(n) for n in nums[:4]]
+    while len(parts) < 4:
+        parts.append(0)
+    return tuple(parts)
 
 
+GITEE_API_JSON = ("https://gitee.com/api/v5/repos/parkty/changzheng-launcher/"
+                  "contents/version.json?ref=main")
+
+
+def _gitee_api_json(timeout=6):
+    """Gitee 的 raw 有缓存，走 API 拿最新的版本清单。"""
+    import base64
+    with _open(GITEE_API_JSON + "&t=%d" % int(time.time()), timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    content = (data or {}).get("content") or ""
+    if not content:
+        raise RuntimeError("没有内容")
+    return json.loads(base64.b64decode(content).decode("utf-8"))
+
+
+# 只认 Gitee：国内快、是唯一发布口
 SOURCES = [
     "https://gitee.com/parkty/changzheng-launcher/raw/main/version.json",
-    "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@main/version.json",
-    "https://raw.githubusercontent.com/parkdug/changzheng-launcher/main/version.json",
-    "https://github.com/parkdug/changzheng-launcher/releases/download/app-latest/version.json",
 ]
 
 MIRRORS = (
@@ -67,25 +88,30 @@ MIRRORS = (
 def check(current="1.0.0", extra=""):
     if CACHE["data"] and time.time() - CACHE["ts"] < 300:
         data = dict(CACHE["data"])
-        data["newer"] = data.get("latest") != current
+        data["newer"] = _ver_key(data.get("latest") or "") > _ver_key(current)
         data["current"] = current
         return data
 
-    sources = [u for u in ([extra] + SOURCES) if u]
+    sources = [u for u in (["gitee-api", extra] + SOURCES) if u]
     results = []
     lock = threading.Lock()
 
     def worker(src):
         try:
-            with _open(src, 5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            if src == "gitee-api":
+                data = _gitee_api_json(6)
+                src_label = GITEE_API_JSON
+            else:
+                with _open(src, 5) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                src_label = src
             latest = str(data.get("version") or "")
             if latest:
                 with lock:
                     results.append({
                         "ok": True, "latest": latest, "current": current,
                         "url": data.get("download") or "", "notes": data.get("notes") or "",
-                        "newer": latest != current, "source": src,
+                        "newer": _ver_key(latest) > _ver_key(current), "source": src_label,
                     })
         except Exception:
             pass
