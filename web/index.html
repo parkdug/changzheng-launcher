@@ -28,7 +28,7 @@
   <main class="main">
     <section id="page-start" class="page active">
       <div class="hero card">
-        <div class="avatar">★</div>
+        <div class="avatar" id="avatarBox">★</div>
         <div class="hero-text">
           <div class="hero-name" id="playerName">未登录</div>
           <div class="hero-sub" id="playerSub">点下面按钮登录，或者用离线账号</div>
@@ -36,6 +36,7 @@
         <div class="hero-actions">
           <button class="btn primary" id="loginBtn">微软登录</button>
           <button class="btn ghost" id="offlineBtn">离线账号</button>
+          <div class="acc-switch" id="accSwitch"></div>
         </div>
       </div>
 
@@ -148,7 +149,11 @@
       <div class="card">
         <div class="sec-title">个人皮肤库 <span class="tiny">放在这里的皮肤，开游戏前挑一个用</span>
           <button class="btn ghost small" id="skinAdd">添加皮肤</button>
+          <button class="btn ghost small" id="skinBulk">批量导入</button>
+          <button class="btn ghost small" id="skinOpenDir">打开皮肤文件夹</button>
           <input type="file" id="skinFile" accept="image/png" style="display:none">
+          <input type="file" id="skinBulkFile" accept="image/png" multiple style="display:none">
+          <input type="file" id="skinFolder" webkitdirectory directory multiple style="display:none">
         </div>
         <div class="skins-grid" id="skinsGrid"><p class="tiny">正在读…</p></div>
         <div class="quick-row" style="margin-top:12px">
@@ -459,7 +464,8 @@
     <button class="btn ghost" id="loginClose">关闭</button>
   </div>
 </div>
-<script src="/static/mods.js?v=110"></script>
+<script src="/static/skin3d.js?v=110"></script>
+  <script src="/static/mods.js?v=110"></script>
   <script src="/static/detail.js?v=110"></script>
   <script src="/static/app.js?v=110"></script>
 </body>
