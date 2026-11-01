@@ -219,26 +219,51 @@ def dependencies(project_id, limit=6):
     return out
 
 
-def project_detail(project_id, mc_version="", limit=25):
-    """项目详情 + 版本列表，给“点开看介绍”用。"""
+def project_detail(project_id, mc_version="", limit=60, loader=""):
+    """项目详情 + 版本列表；指定版本/加载器时先精确取“能装的”，再补一批最新的。"""
+    import json as _json
+    import urllib.parse as _up
     project = _get("https://api.modrinth.com/v2/project/" + project_id)
-    versions = _get("https://api.modrinth.com/v2/project/%s/version" % project_id)
-    rows = []
-    for item in versions[:limit]:
-        files = item.get("files") or []
-        primary = next((f for f in files if f.get("primary")), files[0] if files else {})
-        rows.append({
-            "id": item.get("id"),
-            "name": item.get("name"),
-            "number": item.get("version_number"),
-            "mc": item.get("game_versions") or [],
-            "loaders": item.get("loaders") or [],
-            "date": (item.get("date_published") or "")[:10],
-            "downloads": item.get("downloads") or 0,
-            "url": primary.get("url"),
-            "filename": primary.get("filename"),
-            "compatible": (not mc_version) or (mc_version in (item.get("game_versions") or [])),
-        })
+    rows, seen = [], set()
+
+    def pull(url, compatible):
+        try:
+            items = _get(url)
+        except Exception:
+            items = []
+        for item in items:
+            vid = item.get("id")
+            if vid in seen:
+                continue
+            seen.add(vid)
+            files = item.get("files") or []
+            primary = next((f for f in files if f.get("primary")), files[0] if files else {})
+            rows.append({
+                "id": vid,
+                "name": item.get("name"),
+                "number": item.get("version_number"),
+                "mc": item.get("game_versions") or [],
+                "loaders": item.get("loaders") or [],
+                "date": (item.get("date_published") or "")[:10],
+                "downloads": item.get("downloads") or 0,
+                "url": primary.get("url"),
+                "filename": primary.get("filename"),
+                "compatible": compatible,
+            })
+
+    base = "https://api.modrinth.com/v2/project/%s/version" % project_id
+    if mc_version:
+        q = {"game_versions": _json.dumps([mc_version])}
+        if loader:
+            q["loaders"] = _json.dumps([loader])
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f1 = pool.submit(pull, base + "?" + _up.urlencode(q), True)
+            f2 = pool.submit(pull, base, False)
+            f1.result()
+            f2.result()
+    else:
+        pull(base, False)
     rows.sort(key=lambda r: (not r["compatible"], r["date"]), reverse=False)
     return {
         "id": project.get("id"),
@@ -250,8 +275,8 @@ def project_detail(project_id, mc_version="", limit=25):
         "downloads": project.get("downloads") or 0,
         "followers": project.get("followers") or 0,
         "categories": project.get("categories") or [],
-        "loaders": project.get("loaders") or [],
         "mc": project.get("game_versions") or [],
-        "updated": (project.get("updated") or "")[:10],
-        "versions": rows,
+        "versions": rows[:limit],
+        "mc_version": mc_version,
+        "loader": loader,
     }
