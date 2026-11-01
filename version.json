@@ -1,9 +1,9 @@
 {
-  "version": "1.4.5",
+  "version": "1.4.6",
   "parts": [
-    "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-app.zip-1.4.5.001",
-    "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-app.zip-1.4.5.002",
-    "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-app.zip-1.4.5.003"
+    "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-app.zip-1.4.6.001",
+    "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-app.zip-1.4.6.002",
+    "https://gitee.com/parkty/changzheng-launcher/releases/download/app-latest/changzheng-app.zip-1.4.6.003"
   ],
-  "notes": "1.4.5"
+  "notes": "1.4.6"
 }
