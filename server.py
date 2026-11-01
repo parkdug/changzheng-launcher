@@ -62,6 +62,7 @@ def _read_version():
 
 VERSION = _read_version()
 _COMMUNITY_CACHE = {}
+_PROJECT_CACHE = {}
 
 PROGRESS = {"text": "", "percent": None, "ts": 0.0}
 
@@ -335,17 +336,117 @@ class Handler(BaseHTTPRequestHandler):
                     extra = [d for d in mods_api.dependencies(hits[0]["id"], 5) if d.get("title")]
                     for item in extra:
                         item["title"] = "【前置】" + item["title"]
+                sort = (query.get("sort") or ["downloads"])[0]
+                if sort == "version":
+                    hits = sorted(hits, key=_mc_ver_key, reverse=True)
+                elif sort == "name":
+                    hits = sorted(hits, key=lambda it: (it.get("title") or "").lower())
+                for it in hits + extra:
+                    try:
+                        cached_zh = translate.zh_of(it.get("title") or "")
+                        if cached_zh:
+                            it["zh"] = cached_zh
+                    except Exception:
+                        pass
                 try:
-                    translate.decorate(hits, limit=12, workers=4)
+                    translate.warm([it.get("title") or "" for it in (hits + extra)[:40]], workers=8)
                 except Exception:
                     pass
-                payload_out = {"ok": True, "items": hits + extra, "mc": mc_ver, "loader": loader}
+                payload_out = {"ok": True, "items": hits + extra, "mc": mc_ver, "loader": loader,
+                               "sort": sort}
                 if len(_COMMUNITY_CACHE) > 40:
                     _COMMUNITY_CACHE.clear()
                 _COMMUNITY_CACHE[cache_key] = (_t3.time(), payload_out)
                 self._json(payload_out)
             except Exception as error:
                 self._json({"ok": False, "error": str(error)})
+            return
+        if path == "/api/intro":
+            title = (query.get("title") or [""])[0]
+            text = ""
+            try:
+                text = translate.intro_cached(title) or translate.intro_of(title)
+            except Exception:
+                text = ""
+            self._json({"ok": True, "intro": text})
+            return
+        if path == "/api/translate":
+            names = (query.get("names") or [""])[0]
+            todo = [n for n in names.split("|") if n.strip()][:12]
+            out = {}
+            try:
+                items = [{"title": n} for n in todo]
+                translate.decorate(items, limit=len(items), workers=8)
+                out = {it["title"]: it.get("zh") or "" for it in items}
+            except Exception:
+                pass
+            self._json({"ok": True, "zh": out})
+            return
+        if path == "/api/assist/result":
+            self._json(STATE.get("assist_result") or {"ok": False, "pending": True})
+            return
+        if path == "/api/assist/models":
+            items = []
+            folder = os.path.join(BASE, "assist", "models")
+            if os.path.isdir(folder):
+                for name in sorted(os.listdir(folder)):
+                    if name.lower().endswith(".json"):
+                        items.append({"id": os.path.splitext(name)[0], "size": os.path.getsize(os.path.join(folder, name))})
+            self._json({"ok": True, "items": items})
+            return
+        if path == "/api/assist/model":
+            name = (body.get("name") or "model").strip()
+            content = body.get("content") or ""
+            if not content.strip():
+                self._json({"ok": False, "error": "模型内容是空的"})
+                return
+            try:
+                import assist_gen
+                model_id = re.sub(r"[^A-Za-z0-9_-]+", "_", os.path.splitext(name)[0]) or "model"
+                assist_gen.save_model(BASE, model_id, content)
+                self._json({"ok": True, "id": model_id})
+            except Exception as error:
+                self._json({"ok": False, "error": str(error)})
+            return
+        if path == "/api/assist/make":
+            ver = body.get("version") or (STATE.get("chosen") or "")
+            kind = (body.get("kind") or "datapack").lower()
+            need = (body.get("prompt") or "").strip()
+            key = (cfg.get("deepseek_key") or "").strip()
+            if not need:
+                self._json({"ok": False, "error": "先说清楚要做什么"})
+                return
+            if not key:
+                self._json({"ok": False, "error": "设置里没填 DeepSeek Key"})
+                return
+            mc_ver = mc_version_of(ver) or "1.20.1"
+            loader = loader_of(ver) or "fabric"
+            version_dir = os.path.join(core.MC_DIR, "versions", ver) if ver else core.MC_DIR
+
+            def make():
+                STATE["busy"] = True
+                try:
+                    import assist_gen
+                    if kind == "mod" and body.get("build"):
+                        project, target, note = assist_gen.make_mod(
+                            key, need, kind, mc_ver, loader, BASE, version_dir, progress)
+                    else:
+                        project = assist_gen.design(key, need, kind, mc_ver, loader, progress)
+                        target, note = assist_gen.install(project, BASE, ver, version_dir,
+                                                          build=bool(body.get("build")), progress=progress)
+                    progress("做好了：%s" % note)
+                    STATE["assist_result"] = {"ok": True, "name": project.get("name"),
+                                              "summary": project.get("summary") or "",
+                                              "files": [f["path"] for f in project.get("files") or []],
+                                              "installed": target, "note": note}
+                except Exception as error:
+                    progress("生成失败：%s" % str(error)[:60])
+                    STATE["assist_result"] = {"ok": False, "error": str(error)}
+                finally:
+                    STATE["busy"] = False
+
+            threading.Thread(target=make, daemon=True).start()
+            self._json({"ok": True, "started": True})
             return
         if path == "/api/ask":
             text = (query.get("q") or [""])[0]
@@ -677,16 +778,27 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
             return
         if path == "/api/project":
+            import time as _t2
             pid = (query.get("id") or [""])[0]
-            mc_now = mc_version_of(STATE.get("chosen") or "") if STATE.get("chosen") else ""
+            mc_now = (query.get("mc") or [""])[0] or (mc_version_of(STATE.get("chosen") or "") if STATE.get("chosen") else "")
+            loader_now = (query.get("loader") or [""])[0] or ""
             try:
-                info = mods_api.project_detail(pid, mc_now)
+                ck = (pid, mc_now, loader_now)
+                hit = _PROJECT_CACHE.get(ck)
+                if hit and _t2.time() - hit[0] < 180:
+                    info = dict(hit[1])
+                else:
+                    info = mods_api.project_detail(pid, mc_now, loader=loader_now)
+                    _PROJECT_CACHE[ck] = (_t2.time(), dict(info))
                 try:
-                    info["desc_zh"] = translate.translate_long(info.get("desc") or "", 300)
-                    info["body_zh"] = translate.translate_long(info.get("body") or "", 1200)
+                    info["intro_zh"] = translate.intro_cached(info.get("title") or "")
+                    info["intro_loading"] = not info["intro_zh"]
                 except Exception:
-                    info["desc_zh"] = ""
-                    info["body_zh"] = ""
+                    info["intro_zh"] = ""
+                    info["intro_loading"] = False
+                # 不再机器翻译：中文只来自社区（MC百科 / 苦力怕论坛）
+                info["desc_zh"] = ""
+                info["body_zh"] = ""
                 try:
                     translate.decorate([{"title": info["title"]}], limit=1, workers=1)
                 except Exception:
@@ -781,6 +893,72 @@ class Handler(BaseHTTPRequestHandler):
         if cfg.get("mc_dir"):
             core.MC_DIR = cfg["mc_dir"]
 
+        if parsed.path == "/api/assist/result":
+            self._json(STATE.get("assist_result") or {"ok": False, "pending": True})
+            return
+        if parsed.path == "/api/assist/model":
+            name = (body.get("name") or "model").strip()
+            content = body.get("content") or ""
+            if not content.strip():
+                self._json({"ok": False, "error": "模型内容是空的"})
+            else:
+                try:
+                    import assist_gen
+                    import re as _re2
+                    model_id = _re2.sub(r"[^A-Za-z0-9_-]+", "_", os.path.splitext(name)[0]) or "model"
+                    assist_gen.save_model(BASE, model_id, content)
+                    self._json({"ok": True, "id": model_id})
+                except Exception as error:
+                    self._json({"ok": False, "error": str(error)})
+            return
+        if parsed.path == "/api/assist/make":
+            ver = body.get("version") or (STATE.get("chosen") or "")
+            kind = (body.get("kind") or "datapack").lower()
+            need = (body.get("prompt") or "").strip()
+            key = (cfg.get("deepseek_key") or "").strip()
+            if not need:
+                self._json({"ok": False, "error": "先说清楚要做什么"})
+                return
+            if not key:
+                self._json({"ok": False, "error": "设置里没填 DeepSeek Key"})
+                return
+            mc_ver = mc_version_of(ver) or "1.20.1"
+            loader = loader_of(ver) or "fabric"
+            version_dir = os.path.join(core.MC_DIR, "versions", ver) if ver else core.MC_DIR
+
+            def make():
+                STATE["busy"] = True
+                try:
+                    import assist_gen
+                    builtin_model = None
+                    if body.get("model_id"):
+                        try:
+                            import assist_gen as _ag
+                            builtin_model = _ag.load_model(BASE, body["model_id"])
+                        except Exception:
+                            builtin_model = None
+                    if kind == "mod" and body.get("build"):
+                        project, target, note = assist_gen.make_mod(
+                            key, need, kind, mc_ver, loader, BASE, version_dir, progress,
+                            builtin_model=builtin_model)
+                    else:
+                        project = assist_gen.design(key, need, kind, mc_ver, loader, progress)
+                        target, note = assist_gen.install(project, BASE, ver, version_dir,
+                                                          build=bool(body.get("build")), progress=progress)
+                    progress("做好了：%s" % note)
+                    STATE["assist_result"] = {"ok": True, "name": project.get("name"),
+                                              "summary": project.get("summary") or "",
+                                              "files": [f["path"] for f in project.get("files") or []],
+                                              "installed": target, "note": note}
+                except Exception as error:
+                    progress("生成失败：%s" % str(error)[:60])
+                    STATE["assist_result"] = {"ok": False, "error": str(error)}
+                finally:
+                    STATE["busy"] = False
+
+            threading.Thread(target=make, daemon=True).start()
+            self._json({"ok": True, "started": True})
+            return
         if parsed.path == "/api/skin/upload":
             name = os.path.basename(urllib.parse.unquote(self.headers.get("X-Filename") or "skin.png"))
             if not name.lower().endswith(".png"):
@@ -1373,6 +1551,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": str(error)})
             return
         self._json({"ok": False, "error": "unknown"}, 404)
+
+
+def _mc_ver_key(item):
+    """取这个项目支持的最高 MC 版本，用来按版本排序。"""
+    import re as _re
+    versions = item.get("versions") or item.get("game_versions") or []
+    best = (0,)
+    for text in versions:
+        nums = _re.findall(r"\d+", str(text))
+        if not nums:
+            continue
+        parts = [int(n) for n in nums[:4]]
+        while len(parts) < 4:
+            parts.append(0)
+        key = tuple(parts)
+        if key > best:
+            best = key
+    return best
 
 
 class MainServer(ThreadingHTTPServer):
