@@ -54,6 +54,55 @@ function showPage(name) {
 const CZ_PAGE = (location.search.match(/[?&]page=(\w+)/) || [])[1];
 if (CZ_PAGE) setTimeout(() => showPage(CZ_PAGE), 600);
 
+function lazyBuild3D(grid) {
+  if (!window.Skin3D) return;
+  const slots = Array.from(grid.querySelectorAll(".skin3d-slot"));
+  if (!("IntersectionObserver" in window)) {
+    slots.slice(0, 8).forEach(upgrade);
+    return;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      upgrade(entry.target);
+      io.unobserve(entry.target);
+    });
+  }, { rootMargin: "120px" });
+  slots.forEach((slot) => io.observe(slot));
+
+  function upgrade(slot) {
+    if (!slot || slot.dataset.loaded === "1") return;
+    slot.dataset.loaded = "1";
+    slot.innerHTML = "";
+    slot.appendChild(window.Skin3D.build(slot.dataset.url, 132, true));
+  }
+}
+
+async function refreshAvatar() {
+  const box = document.getElementById("avatarBox");
+  if (!box) return;
+  try {
+    const r = await api("/api/skins");
+    if (!r.ok) return;
+    const active = (r.items || []).find((it) => it.active) || (r.items || [])[0];
+    if (!active) return;
+    const img = new Image();
+    img.onload = function () {
+      const c = document.createElement("canvas");
+      c.width = 8; c.height = 8;
+      const g = c.getContext("2d");
+      g.imageSmoothingEnabled = false;
+      g.drawImage(img, 8, 8, 8, 8, 0, 0, 8, 8);   // 头部正面
+      box.innerHTML = "";
+      const face = new Image();
+      face.src = c.toDataURL();
+      face.style.imageRendering = "pixelated";
+      box.appendChild(face);
+    };
+    img.src = "/api/skin/file?name=" + encodeURIComponent(active.name);
+  } catch (e) {}
+}
+
 async function loadSkins() {
   const grid = $("#skinsGrid");
   if (!grid) return;
@@ -67,14 +116,38 @@ async function loadSkins() {
   grid.innerHTML = r.items.map((it) =>
     '<div class="skin-card' + (it.active ? " active" : "") + '" data-name="' + it.name + '">' +
     '<span class="skin-del" data-del="' + it.name + '">×</span>' +
-    '<img src="/api/skin/file?name=' + encodeURIComponent(it.name) + '">' +
+    '<div class="skin3d-slot" data-url="/api/skin/file?name=' + encodeURIComponent(it.name) + '"></div>' +
     "<b>" + it.name + "</b></div>").join("");
+  // 先用 2D 头部快照占位，滚到可见再建 3D（皮肤多的时候不卡）
+  grid.querySelectorAll(".skin3d-slot").forEach((slot) => {
+    const url = slot.dataset.url;
+    const img = new Image();
+    img.onload = function () {
+      const c = document.createElement("canvas");
+      c.width = 8; c.height = 8;
+      const g = c.getContext("2d");
+      g.imageSmoothingEnabled = false;
+      g.drawImage(img, 8, 8, 8, 8, 0, 0, 8, 8);
+      const thumb = new Image();
+      thumb.src = c.toDataURL();
+      thumb.style.width = "84px";
+      thumb.style.height = "84px";
+      thumb.style.imageRendering = "pixelated";
+      thumb.style.background = "#F3E7DF";
+      thumb.style.borderRadius = "14px";
+      slot.appendChild(thumb);
+      slot.dataset.pending = "1";
+    };
+    img.src = url;
+  });
+  lazyBuild3D(grid);
   grid.querySelectorAll(".skin-card").forEach((card) => card.addEventListener("click", async (e) => {
     if (e.target.classList.contains("skin-del")) return;
     const name = card.getAttribute("data-name");
     const res = await api("/api/skin/select", { name: name });
     toast(res.ok ? "默认皮肤：" + name : "设置失败：" + res.error);
-    loadSkins();
+    await loadSkins();
+    refreshAvatar();
   }));
   grid.querySelectorAll("[data-del]").forEach((btn) => btn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -103,6 +176,29 @@ $("#skinFile")?.addEventListener("change", async (e) => {
   toast(r.ok ? "加进来了：" + r.name : "失败：" + r.error);
   loadSkins();
 });
+$("#skinOpenDir")?.addEventListener("click", async () => {
+  const r = await api("/api/skins");
+  if (r.ok && r.dir) {
+    await api("/api/reveal", { path: r.dir });
+    toast("皮肤文件夹已打开，PNG 直接拖进去，回来点一下皮肤库就刷新");
+  }
+});
+
+$("#skinBulk")?.addEventListener("click", () => $("#skinBulkFile")?.click());
+$("#skinBulkFile")?.addEventListener("change", async (e) => {
+  const files = Array.from(e.target.files || []).filter((f) => f.name.toLowerCase().endsWith(".png"));
+  if (!files.length) { toast("没选到 PNG"); return; }
+  let ok = 0;
+  for (const file of files) {
+    const r = await uploadSkin(file);
+    if (r.ok) ok += 1;
+  }
+  toast("导入完成：" + ok + "/" + files.length);
+  e.target.value = "";
+  await loadSkins();
+  refreshAvatar();
+});
+
 $("#skinInstallMod")?.addEventListener("click", async () => {
   toast("正在找适配当前版本的 CustomSkinLoader…");
   const r = await api("/api/skin/installmod", { version: state.chosen });
@@ -193,7 +289,9 @@ setInterval(async () => {
     if (r.active) {
       bar.classList.remove("hidden");
       bar.classList.toggle("indeterminate", r.percent === null || r.percent === undefined);
-      if (r.percent !== null && r.percent !== undefined) {
+      const okText = /(装好了|下好了|做好了|导入完成|100\/100)/.test(r.progress || "");
+      if (okText) { $("#dlFill").style.width = "100%"; $("#dlPct").textContent = "100%"; }
+      else if (r.percent !== null && r.percent !== undefined) {
         $("#dlFill").style.width = r.percent + "%";
         $("#dlPct").textContent = r.percent + "%";
       } else {
@@ -238,6 +336,8 @@ async function bootInner() {
   }
   renderSettings();
   if (d.profile) applyProfile(d.profile);
+  renderAccountSwitch(d.config);
+  refreshAvatar();
   syncChosen();
   renderMyVersions();
   const off = document.querySelector('#sourceSeg button[data-source="official"]');
@@ -254,6 +354,55 @@ function applyProfile(p) {
   $("#playerName").textContent = p.name;
   $("#playerSub").textContent = p.user_type === "msa" ? "正版账号" : "离线账号";
   $("#account").textContent = (p.user_type === "msa" ? "正版：" : "离线：") + p.name;
+}
+
+async function refreshAccounts() {
+  try {
+    const c = await api("/api/bootstrap");
+    if (c.ok) renderAccountSwitch(c.config);
+  } catch (e) {}
+}
+
+function renderAccountSwitch(cfg) {
+  const box = $("#accSwitch");
+  if (!box) return;
+  const profiles = (cfg && cfg.profiles) || {};
+  const active = (cfg && cfg.active_kind) || "";
+  const rows = [];
+  if (profiles.msa && profiles.msa.name) {
+    rows.push('<button class="acc-chip' + (active === "msa" ? " on" : "") +
+      '" data-kind="msa">正版：' + escHtml(profiles.msa.name) + "</button>");
+  }
+  if (profiles.offline && profiles.offline.name) {
+    rows.push('<button class="acc-chip' + (active === "offline" ? " on" : "") +
+      '" data-kind="offline">离线：' + escHtml(profiles.offline.name) + "</button>");
+  }
+  box.innerHTML = rows.join("");
+  box.querySelectorAll(".acc-chip[data-kind]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (btn.classList.contains("on")) return;
+      const kind = btn.dataset.kind;
+      // 立刻给反馈：高亮先切过去，按钮进入 loading
+      box.querySelectorAll(".acc-chip").forEach((b) => b.classList.remove("on"));
+      btn.classList.add("on", "loading");
+      const label = btn.textContent;
+      btn.textContent = "切换中…";
+      const t0 = Date.now();
+      const r = await api("/api/login/switch", { type: kind });
+      const used = Date.now() - t0;
+      if (used < 260) await new Promise((res) => setTimeout(res, 260 - used)); // 太快反而看不清
+      btn.classList.remove("loading");
+      btn.textContent = label;
+      if (!r.ok) {
+        toast(r.error || "切换失败");
+        await refreshAccounts();
+        return;
+      }
+      applyProfile(r.profile);
+      await refreshAccounts();
+      toast("已切到" + (kind === "msa" ? "正版" : "离线") + "：" + r.profile.name, 1500);
+    });
+  });
 }
 
 function syncFilterToChosen() {
@@ -1118,8 +1267,30 @@ $("#playBtn")?.addEventListener("click", async () => {
   const r = await api("/api/launch", { version: state.chosen });
   toast(r.ok ? "已启动" : "启动失败：" + r.error);
 });
+function askText(title, defaultValue) {
+  return new Promise((resolve) => {
+    const mask = document.createElement("div");
+    mask.className = "ask-mask";
+    mask.innerHTML = '<div class="ask-box"><div class="ask-title">' + escHtml(title) + '</div>' +
+      '<input id="askTextInput" value="' + escHtml(defaultValue || "") + '">' +
+      '<div class="ask-actions"><button class="btn ghost" id="askCancel">取消</button>' +
+      '<button class="btn primary" id="askOk">确定</button></div></div>';
+    document.body.appendChild(mask);
+    const input = mask.querySelector("#askTextInput");
+    input.focus();
+    input.select();
+    const close = (value) => { mask.remove(); resolve(value); };
+    mask.querySelector("#askCancel").addEventListener("click", () => close(""));
+    mask.querySelector("#askOk").addEventListener("click", () => close(input.value.trim()));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") close(input.value.trim());
+      if (e.key === "Escape") close("");
+    });
+  });
+}
+
 $("#offlineBtn")?.addEventListener("click", async () => {
-  const name = prompt("离线账号名字", "Player");
+  const name = await askText("离线账号名字", "Player");
   if (!name) return;
   await api("/api/offline", { name });
   applyProfile({ name: name, user_type: "legacy" });
@@ -1137,6 +1308,7 @@ $("#loginBtn")?.addEventListener("click", async () => {
       clearInterval(timer);
       $("#loginState").textContent = "登录成功：" + p.name;
       applyProfile({ name: p.name, user_type: "msa" });
+      refreshAccounts();
       setTimeout(() => $("#loginModal").classList.add("hidden"), 1200);
     }
   }, 3000);
