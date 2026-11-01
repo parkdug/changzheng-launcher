@@ -71,7 +71,9 @@ def _gitee_api_json(timeout=6):
 
 # 只认 Gitee：国内快、是唯一发布口
 SOURCES = [
-    "https://gitee.com/parkty/changzheng-launcher/raw/main/version.json",
+    # Gitee raw 有缓存、API 会限流；jsDelivr 和 GitHub raw 做兜底
+    "https://cdn.jsdelivr.net/gh/parkdug/changzheng-launcher@main/version.json",
+    "https://raw.githubusercontent.com/parkdug/changzheng-launcher/main/version.json",
 ]
 
 MIRRORS = (
