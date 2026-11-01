@@ -133,7 +133,28 @@ def main():
         time.sleep(3600)
 
 
+def apply_update_mode():
+    """被拉起来专门做更新的：等老进程退干净，覆盖文件，再启动正式程序。"""
+    import subprocess
+    base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+    time.sleep(5)
+    try:
+        import selfupdate
+        selfupdate.apply_pending(base)
+    except Exception as error:
+        log_line("覆盖失败：%s" % error)
+    exe = os.path.join(base, "长征启动器.exe")
+    try:
+        subprocess.Popen([exe], cwd=base, close_fds=True,
+                         creationflags=0x08000000 if sys.platform == "win32" else 0)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    if "--apply-update" in sys.argv:
+        apply_update_mode()
+        raise SystemExit(0)
     try:
         main()
     except Exception as error:  # 把异常写进 launcher.log，窗口版看不到控制台
