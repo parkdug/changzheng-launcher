@@ -78,6 +78,8 @@ function lazyBuild3D(grid) {
   }
 }
 
+window.loadSkins = function () { loadSkins(); };
+
 async function refreshAvatar() {
   const box = document.getElementById("avatarBox");
   if (!box) return;
@@ -107,7 +109,22 @@ async function loadSkins() {
   const grid = $("#skinsGrid");
   if (!grid) return;
   grid.innerHTML = '<p class="tiny">正在读…</p>';
-  const r = await api("/api/skins");
+  const timeout = setTimeout(function () {
+    if (grid.textContent.indexOf("正在读") >= 0) {
+      grid.innerHTML = '<p class="tiny">读得有点慢…</p>' +
+        '<button class="btn ghost small" onclick="window.loadSkins && window.loadSkins()">重试</button>';
+    }
+  }, 6000);
+  let r;
+  try {
+    r = await api("/api/skins");
+  } catch (e) {
+    clearTimeout(timeout);
+    grid.innerHTML = '<p class="tiny">读不到皮肤列表，点这里重试</p>' +
+      '<button class="btn ghost small" onclick="window.loadSkins && window.loadSkins()">重试</button>';
+    return;
+  }
+  clearTimeout(timeout);
   if (!r.ok) { grid.innerHTML = '<p class="tiny">读不到：' + r.error + "</p>"; return; }
   if (!r.items.length) {
     grid.innerHTML = '<div class="empty-hint"><b>还没有皮肤</b><p>点右上角「添加皮肤」选一张 PNG（64x64 或 64x32 的皮肤文件），放进来以后开游戏前挑一个。</p></div>';
@@ -1206,8 +1223,9 @@ $("#checkUpdateBtn")?.addEventListener("click", async () => {
     return;
   }
   toast("有新版本 " + r.latest + "，开始下载…", 4000);
-  if (r.url) {
-    await api("/api/download_update", { url: r.url, parts: r.parts || [] });
+  const hasParts = !!(r.parts && r.parts.length);
+  if (r.url || hasParts) {
+    await api("/api/download_update", { url: r.url || "", parts: r.parts || [] });
     const t0 = Date.now();
     while (Date.now() - t0 < 600000) {
       await new Promise((res) => setTimeout(res, 3000));
