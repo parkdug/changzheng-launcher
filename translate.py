@@ -10,7 +10,8 @@ import threading
 import urllib.parse
 import urllib.request
 
-CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "translations.json")
+_CACHE_BASE = os.environ.get("CZ_BASE") or os.path.dirname(os.path.abspath(__file__))
+CACHE_PATH = os.path.join(_CACHE_BASE, "translations.json")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 ITEM = re.compile(
@@ -171,9 +172,179 @@ def _parse(html, query):
     return best
 
 
+KLP_ITEM = re.compile(r'<a[^>]*href="(?:https?://www\.klpbbs\.com)?/thread-[^"]+"[^>]*>(.*?)</a>', re.S)
+
+
+def klpbbs(name, timeout=8):
+    """在苦力怕论坛搜索里找同名主题，取中文标题（不联网成功就返回空，绝不瞎翻）。"""
+    base = clean_name(name)
+    if not base:
+        return ""
+    try:
+        url = "https://www.klpbbs.com/search.php?mod=forum&srchtxt=" + urllib.parse.quote(base)
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://www.klpbbs.com/"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+    want = base.lower()
+    for match in KLP_ITEM.finditer(html):
+        title = TAGS.sub("", match.group(1)).strip()
+        title = BRACKET.sub("", title)
+        if not title or want not in title.lower():
+            continue
+        zh = re.sub(r'^\s*[\[【(（]?[^\]】)）]*[\]】)）]?\s*', "", title)
+        if re.search(r"[一-鿿]", zh) and len(zh) <= 40:
+            return zh
+    return ""
+
+
+ITEM_BLOCK = re.compile(r'<div class="result-item">(.*?)</div>\s*</div>', re.S)
+
+
+def intro_cached(name):
+    """只查本地缓存，不联网；没抓到过就返回空。"""
+    base = clean_name(name)
+    if not base:
+        return ""
+    cache = _load()
+    with _lock:
+        return cache.get("intro:" + base.lower(), "")
+
+
+def intro_of(name, timeout=10, limit=400):
+    """从 MC百科 搜索页扒这个 mod 的中文简介（结果里自带一段 wiki 摘要）。"""
+    base = clean_name(name)
+    if not base:
+        return ""
+    key = "intro:" + base.lower()
+    cache = _load()
+    with _lock:
+        if cache.get(key):
+            return cache[key]
+    try:
+        url = "https://search.mcmod.cn/s?key=" + urllib.parse.quote(base)
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://www.mcmod.cn/"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+    want = base.strip().lower()
+    bad = ("扩展", "附属", "修复", "前置", "兼容", "汉化", "整合", "材质", "光影包", "插件")
+    best_score, best_title, best_text, best_order = 0, "", "", 999
+    chunks = html.split('class="result-item"')[1:]
+    for order, chunk in enumerate(chunks):
+        raw = chunk[:5000]
+        title_match = re.search(r'<a[^>]*href="https://www\.mcmod\.cn/class/\d+\.html"[^>]*>(.*?)</a>', raw, re.S)
+        if not title_match:
+            continue
+        title = BRACKET.sub("", TAGS.sub("", title_match.group(1))).strip()
+        head = title.lower()
+        paren = ""
+        pm = re.search(r"[(（]\s*([^)）]+)[)）]", title)
+        if pm:
+            paren = pm.group(1).strip().lower()
+        def norm(s):
+            return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+        pw, pwq = norm(paren), norm(want)
+        if pw and pwq and pw == pwq:
+            score = 9
+        elif pw and pwq and pw.startswith(pwq):
+            score = 7
+        elif pw and pwq and pwq in pw:
+            score = 6
+        elif paren == want or head == want:
+            score = 8
+        elif paren.startswith(want):
+            score = 5
+        elif head.startswith(want):
+            score = 4
+        elif want in head and len(head) <= len(want) * 3:
+            score = 3
+        else:
+            continue
+        if any(b in title for b in bad):
+            score -= 4
+        if pw and pwq and len(pw) > len(pwq) * 2 + 3:
+            score -= 3   # 括号里英文名比原名词长太多，八成是“XX 扩展”
+        cn_part = title.split("(")[0].split("（")[0].strip()
+        if len(cn_part) <= len(want) + 6:
+            score += 3   # 中文名短，说明是主条目而不是“XX 扩展”
+        if score <= 0:
+            continue
+        text = re.sub(r"<script.*?</script>", " ", raw, flags=re.S)
+        text = BRACKET.sub("", TAGS.sub(" ", text))
+        text = re.sub(r"\[h\d=[^\]]*\]", " ", text)
+        text = re.sub(r"\[mark:[^\]]*\]", " ", text)
+        text = text.replace("&nbsp;", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        cut = len(text)
+        for marker in ("地址：", "地址:", "收录时间", "最后编辑", "- MC百科"):
+            pos = text.find(marker)
+            if 0 < pos < cut:
+                cut = pos
+        text = text[:cut].strip()
+        if score > best_score or (score == best_score and order < best_order):
+            best_score, best_title, best_text, best_order = score, title, text, order
+    if best_text:
+        best_text = best_text[:limit]
+        with _lock:
+            cache[key] = best_text
+            _save(cache)
+    return best_text
+
+CACHE_VER = "v2:"
+
+
+def zh_title(name, timeout=10):
+    """只从 MC百科 搜索结果里取中文名（括号外那段）。"""
+    base = clean_name(name)
+    if not base:
+        return ""
+    want = re.sub(r"[^a-z0-9]+", "", base.lower())
+    try:
+        url = "https://search.mcmod.cn/s?key=" + urllib.parse.quote(base)
+        req = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": "https://www.mcmod.cn/"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            html = resp.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+    bad = ("扩展", "附属", "修复", "前置", "兼容", "汉化", "整合", "材质", "插件")
+    best_score, best_cn, best_len = 0, "", 999
+    for chunk in html.split('class="result-item"')[1:]:
+        raw = chunk[:4000]
+        m = re.search(r'href="https://www\.mcmod\.cn/class/\d+\.html"[^>]*>(.*?)</a>', raw, re.S)
+        if not m:
+            continue
+        title = BRACKET.sub("", TAGS.sub("", m.group(1))).strip()
+        pm = re.search(r"[(（]\s*([^)）]+)[)）]", title)
+        paren_norm = re.sub(r"[^a-z0-9]+", "", (pm.group(1) if pm else "").lower())
+        cn = re.split(r"[(（]", title)[0].strip()
+        if not cn or not re.search(r"[一-鿿]", cn):
+            continue
+        if any(b in title for b in bad):
+            continue
+        if paren_norm and want and paren_norm == want:
+            score = 9
+        elif paren_norm and want and paren_norm.startswith(want):
+            score = 6
+        elif re.sub(r"[^a-z0-9]+", "", cn.lower()) == want:
+            score = 8
+        else:
+            continue
+        if score > best_score or (score == best_score and len(cn) < best_len):
+            best_score, best_cn, best_len = score, cn, len(cn)
+    return best_cn
+
+
+CACHE_VER = "v3:"
+
+
 def lookup(name, timeout=8):
-    key = clean_name(name).lower()
-    if not key:
+    """中文名：先 MC百科 搜索匹配，再苦力怕论坛；查不到就空着，不编。"""
+    key = CACHE_VER + clean_name(name).lower()
+    if not key.strip("v3:"):
         return ""
     if key in GLOSSARY:
         return GLOSSARY[key]
@@ -182,28 +353,36 @@ def lookup(name, timeout=8):
         if cache.get(key):
             return cache[key]
     zh = ""
-    base = clean_name(name)
-    queries = [base, name, base + " mod"]
-    if base:
-        queries.append(base.split()[0])
-    for query in queries:
-        if not query:
-            continue
+    try:
+        zh = zh_title(name, timeout)
+    except Exception:
+        zh = ""
+    if not zh:
         try:
-            zh = _parse(_fetch(query, timeout), base)
+            zh = _parse(_fetch(clean_name(name), timeout), clean_name(name))
         except Exception:
             zh = ""
-        if zh:
-            break
     if not zh:
-        zh = word_fallback(name)
-    if not zh:
-        zh = machine(name)
+        try:
+            zh = klpbbs(name)
+        except Exception:
+            zh = ""
     if zh:
         with _lock:
             cache[key] = zh
             _save(cache)
     return zh
+
+
+def zh_of(name):
+    """只查缓存和词典，不联网卡住界面；查不到就返回空，前端下一步再补。"""
+    key = CACHE_VER + clean_name(name).lower()
+    if not key:
+        return ""
+    if key in GLOSSARY:
+        return GLOSSARY[key]
+    cache = _load()
+    return cache.get(key, "")
 
 
 def decorate(items, limit=12, workers=4):
