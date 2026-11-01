@@ -196,7 +196,7 @@ def install_vanilla(version_id, mc_dir, source="official", progress=None, worker
 
     with open(os.path.join(ver_dir, version_id + ".json"), "w", encoding="utf-8") as handle:
         json.dump(meta, handle, ensure_ascii=False, indent=2)
-    say("装好了：%s" % version_id)
+    say("%s 装好了（100/100）" % version_id)
     return ver_dir
 
 
