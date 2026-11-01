@@ -7,13 +7,28 @@ window.onerror = function (msg, src, line) {
   if (box) { box.textContent = "界面报错：" + msg; box.classList.add("show"); }
 };
 
+function escHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 const state = {
   versions: [], chosen: null, config: {}, source: "official", filter: "全部",
   kind: "vanilla", manifest: [], mc: "1.18.2", loader: "vanilla", offset: 0, cfg: {},
+  filterVer: "",
 };
+
+try {
+  const _p = new URLSearchParams(location.search);
+  const _v = _p.get("ver");
+  if (_v) state.filterVer = _v;
+} catch (e) {}
 
 function toast(text, ms = 2400) {
   const el = $("#toast");
@@ -32,6 +47,7 @@ async function api(path, body) {
 function showPage(name) {
   $$(".rail-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === name));
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + name));
+  if (name === "download") { syncFilterToChosen(); }
   if (name === "files" && window.loadFiles) loadFiles();
   if (name === "skins" && window.loadSkins) loadSkins();
 }
@@ -226,8 +242,11 @@ async function bootInner() {
   renderMyVersions();
   const off = document.querySelector('#sourceSeg button[data-source="official"]');
   if (off) { document.querySelectorAll("#sourceSeg button").forEach((b) => b.classList.toggle("on", b === off)); }
-  loadManifest();
+  loadManifest().then(() => { fillVersionSelect(); applyUrlSort(); }).catch(() => {});
   refreshNet();
+  switchKindFromUrl();
+  applyUrlSort();
+  refreshModels();
   syncUpdateButton();
 }
 
@@ -235,6 +254,20 @@ function applyProfile(p) {
   $("#playerName").textContent = p.name;
   $("#playerSub").textContent = p.user_type === "msa" ? "正版账号" : "离线账号";
   $("#account").textContent = (p.user_type === "msa" ? "正版：" : "离线：") + p.name;
+}
+
+function syncFilterToChosen() {
+  const v = state.versions.find((x) => x.id === state.chosen) || state.versions[0];
+  if (!v) return;
+  state.mc = v.mc;
+  state.loader = v.loader;
+  const sortNow = ($("#sortSel") || {}).value || "downloads";
+  state.filterVer = sortNow === "version" ? v.mc : "";
+  const verSel = $("#verSel");
+  if (verSel) {
+    verSel.value = sortNow === "version" ? v.mc : "";
+    verSel.style.display = sortNow === "version" ? "" : "none";
+  }
 }
 
 function syncChosen() {
@@ -400,11 +433,111 @@ function renderVersions() {
   });
 }
 
+let genModelId = "";
+
+async function refreshModels(selectId) {
+  const sel = document.getElementById("genModelSel");
+  if (!sel) return;
+  try {
+    const r = await api("/api/assist/models");
+    if (!r.ok) return;
+    const items = r.items || [];
+    if (!items.length) { sel.style.display = "none"; return; }
+    sel.style.display = "";
+    sel.innerHTML = '<option value="">不用模型（由小助手生成）</option>' +
+      items.map((it) => '<option value="' + it.id + '">' + it.id + '</option>').join("");
+    if (selectId) sel.value = selectId;
+    genModelId = sel.value;
+  } catch (e) {}
+}
+
+$("#genModelBtn")?.addEventListener("click", () => {
+  const input = $("#genModel");
+  if (input) input.click();
+});
+
+$("#genModel")?.addEventListener("change", async (event) => {
+  const file = (event.target.files || [])[0];
+  if (!file) return;
+  const text = await file.text();
+  const label = $("#genModelName");
+  if (label) label.textContent = "上传中…";
+  try {
+    const r = await api("/api/assist/model", { name: file.name, content: text });
+    if (r.ok) {
+      genModelId = r.id;
+      if (label) label.textContent = "已选：" + file.name;
+      await refreshModels(r.id);
+    } else if (label) {
+      label.textContent = "上传失败：" + (r.error || "");
+    }
+  } catch (e) {
+    if (label) label.textContent = "上传失败";
+  }
+});
+
+$("#genModelSel")?.addEventListener("change", () => {
+  genModelId = $("#genModelSel").value || "";
+});
+
+$("#genBtn")?.addEventListener("click", async () => {
+  const btn = $("#genBtn");
+  const prompt = ($("#genPrompt").value || "").trim();
+  const kind = $("#genKind").value;
+  const stEl = $("#genState");
+  const out = $("#genOut");
+  if (!prompt) { toast("先写清楚想做什么"); return; }
+  btn.disabled = true;
+  if (stEl) stEl.textContent = "生成中…";
+  if (out) { out.classList.add("hidden"); out.innerHTML = ""; }
+  try {
+    const wantBuild = !!(document.getElementById("genBuild") || {}).checked;
+    const r = await api("/api/assist/make", { version: state.chosen || "", kind: kind, prompt: prompt,
+                                              build: wantBuild, model_id: genModelId });
+    if (!r.ok) { toast(r.error || "失败了"); if (stEl) stEl.textContent = ""; return; }
+    const started = Date.now();
+    let result = null;
+    while (Date.now() - started < 300000) {
+      await new Promise((res) => setTimeout(res, 2000));
+      const pg = await api("/api/progress");
+      if (stEl && pg.progress) stEl.textContent = pg.progress;
+      const rr = await api("/api/assist/result");
+      if (rr && !rr.pending) { result = rr; break; }
+      if ((pg.progress || "").indexOf("生成失败") >= 0) break;
+    }
+    if (out) {
+      out.classList.remove("hidden");
+      if (result && result.ok) {
+        out.innerHTML = "<b>做好了：" + (result.name || "") + "</b><br>" +
+          "装到：" + (result.installed || "") + "<br>" + (result.note || "") +
+          "<br>文件：" + (result.files || []).join("、");
+      } else {
+        out.textContent = (result && result.error) || "生成失败，看看小助手里的提示";
+      }
+    }
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 $("#searchBtn")?.addEventListener("click", () => loadCommunity(true));
 $("#moreBtn")?.addEventListener("click", () => loadCommunity(false));
 $("#searchInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") loadCommunity(true); });
 $("#typeSel")?.addEventListener("change", () => loadCommunity(true));
 $("#sourceSel")?.addEventListener("change", () => loadCommunity(true));
+$("#sortSel")?.addEventListener("change", () => {
+  const sel = $("#sortSel").value;
+  const verSel = $("#verSel");
+  if (verSel) {
+    verSel.style.display = sel === "version" ? "" : "none";
+    if (sel !== "version") verSel.value = "";
+  }
+  loadCommunity(true);
+});
+$("#verSel")?.addEventListener("change", () => {
+  state.filterVer = $("#verSel").value || "";
+  loadCommunity(true);
+});
 
 async function loadCommunity(reset) {
   if (reset === undefined) reset = true;
@@ -414,8 +547,12 @@ async function loadCommunity(reset) {
   const source = $("#sourceSel").value;
   const q = encodeURIComponent($("#searchInput").value.trim());
   const deps = $("#depsChk").checked ? 1 : 0;
-  const url = "/api/community?type=" + kind + "&mc=" + state.mc + "&loader=" + state.loader +
-    "&source=" + source + "&q=" + q + "&deps=" + deps + "&limit=40&offset=" + state.offset;
+  const sortMode = ($("#sortSel") || {}).value || "downloads";
+  const pickedVer = ($("#verSel") || {}).value || state.filterVer || "";
+  const useMc = pickedVer || state.mc;
+  const url = "/api/community?type=" + kind + "&mc=" + useMc + "&loader=" + state.loader +
+    "&source=" + source + "&q=" + q + "&deps=" + deps + "&sort=" + sortMode +
+    "&limit=40&offset=" + state.offset;
   const r = await api(url);
   box.classList.remove("skeleton");
   if (!r.ok) { toast("搜不到：" + r.error); return; }
@@ -435,7 +572,7 @@ async function loadCommunity(reset) {
     el.innerHTML = icon +
       '<div class="mod-info"><div class="mod-title">' + shown + '</div><div class="mod-desc">' + sub +
       escHtml(item.desc || "") + '</div>' +
-      ((item.versions && item.versions.length) ? '<div class="mod-vers">支持 ' + item.versions.slice(-5).join(" · ") + "</div>" : "") +
+      verLine(item, useMc) +
       '</div><div class="mod-meta"><span class="dl">' +
       (item.downloads || 0).toLocaleString() + ' 下载</span><button class="btn primary">装这个</button></div>';
     el.querySelector("button").addEventListener("click", async () => {
@@ -446,6 +583,81 @@ async function loadCommunity(reset) {
   });
   state.offset += items.length;
   $("#moreBtn").style.display = items.length >= 20 ? "inline-block" : "none";
+  fillChinese(items);
+}
+
+function fillVersionSelect() {
+  const sel = $("#verSel");
+  if (!sel) return;
+  const seen = new Set();
+  const list = (state.manifest || [])
+    .filter((v) => v && v.id && v.type !== "old_alpha" && v.type !== "old_beta")
+    .map((v) => v.id)
+    .filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">全部版本</option>' +
+    list.map((id) => '<option value="' + escHtml(id) + '">' + escHtml(id) + "</option>").join("");
+  if (keep && seen.has(keep)) sel.value = keep;
+}
+
+function applyUrlSort() {
+  const params = new URLSearchParams(location.search);
+  const sort = params.get("sort");
+  const sel = $("#sortSel");
+  if (sort && sel) { sel.value = sort; sel.dispatchEvent(new Event("change")); }
+  const ver = params.get("ver");
+  const verSel = $("#verSel");
+  if (ver) {
+    state.filterVer = ver;
+    if (verSel) {
+      verSel.value = ver;
+      verSel.dispatchEvent(new Event("change"));
+    }
+  }
+}
+
+function switchKindFromUrl() {
+  const kind = new URLSearchParams(location.search).get("kind");
+  if (!kind) return;
+  const btn = document.querySelector('.side-item[data-kind="' + kind + '"]') ||
+              document.querySelector('[data-kind="' + kind + '"]');
+  if (btn) btn.click();
+}
+
+function verLine(item, picked) {
+  const vs = item.versions || [];
+  if (!vs.length) return "";
+  if (picked && vs.indexOf(picked) >= 0) {
+    const others = vs.filter((v) => v !== picked).slice(-4);
+    return '<div class="mod-vers">支持 ' + escHtml(picked) + " ✓" +
+      (others.length ? " · 也支持 " + escHtml(others.join(" · ")) : "") + "</div>";
+  }
+  return '<div class="mod-vers">支持 ' + escHtml(vs.slice(-5).join(" · ")) + "</div>";
+}
+
+async function fillChinese(items) {
+  const todo = items.filter((it) => !it.zh && it.title).map((it) => it.title).slice(0, 12);
+  if (!todo.length) return;
+  try {
+    const r = await api("/api/translate?names=" + encodeURIComponent(todo.join("|")));
+    if (!r.ok || !r.zh) return;
+    items.forEach((it, idx) => {
+      const zh = r.zh[it.title];
+      if (!zh) return;
+      const card = document.querySelector('.mod-card[data-pid="' + (it.id || "") + '"]');
+      if (!card) return;
+      const titleEl = card.querySelector(".mod-title");
+      if (titleEl) titleEl.textContent = zh;
+      const descEl = card.querySelector(".mod-desc");
+      if (descEl && descEl.firstChild && !descEl.querySelector(".en")) {
+        const en = document.createElement("span");
+        en.className = "en";
+        en.textContent = it.title;
+        descEl.insertBefore(en, descEl.firstChild);
+        descEl.insertBefore(document.createTextNode(" · "), en.nextSibling);
+      }
+    });
+  } catch (e) {}
 }
 
 async function refreshNet() {
