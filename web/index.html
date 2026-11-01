@@ -125,6 +125,14 @@
                 <option value="modrinth">Modrinth</option>
                 <option value="curseforge">CurseForge</option>
               </select>
+              <select id="sortSel" title="排序方式">
+                <option value="downloads">按下载量</option>
+                <option value="version">按支持版本（新→旧）</option>
+                <option value="name">按名字</option>
+              </select>
+              <select id="verSel" title="只看这个游戏版本" style="display:none">
+                <option value="">全部版本</option>
+              </select>
               <label class="check"><input type="checkbox" id="depsChk" checked>连带前置</label>
               <button class="btn primary" id="searchBtn">搜索</button>
             </div>
@@ -194,6 +202,27 @@
           <input id="askInput" placeholder="有没有让帧数高一点的模组 / 找个好看的光影…">
           <button class="btn primary" id="askBtn">发送</button>
         </div>
+        <div class="gen-box">
+          <div class="sec-title" style="margin-top:14px">定制一个<span class="hint">写好需求，直接生成并装进当前版本（用你自己的 DeepSeek token）</span></div>
+          <textarea id="genPrompt" placeholder="例如：做一个数据包，玩家挖到钻石时全服广播，并给 3 秒速度药水"></textarea>
+          <div class="gen-bar">
+            <select id="genKind">
+              <option value="datapack">数据包（立即能用）</option>
+              <option value="kubejs">KubeJS 脚本（要装 KubeJS）</option>
+              <option value="plugin">服务端插件（编译成 jar）</option>
+              <option value="mod">Fabric/Forge 模组工程</option>
+            </select>
+            <label class="check"><input type="file" id="genModel" accept=".json,.bbmodel" style="display:none">
+              <button class="btn ghost small" id="genModelBtn" type="button">上传模型（物品/盔甲/方块都行）</button>
+              <span class="hint" id="genModelName"></span>
+            </label>
+            <select id="genModelSel" title="已上传的模型" style="display:none"></select>
+            <label class="check"><input type="checkbox" id="genBuild">直接构建成 jar（首次下载 Gradle）</label>
+            <button class="btn primary" id="genBtn">生成并安装</button>
+            <span class="hint" id="genState"></span>
+          </div>
+          <div class="gen-out hidden" id="genOut"></div>
+        </div>
         <div class="ask-results hidden" id="askResults">
           <div class="ask-results-head">
             <span id="askCount">结果</span>
@@ -224,28 +253,53 @@
           <div class="sec-title">第一次用，按这个顺序</div>
           <ol class="steps-list">
             <li><b>登录</b>：启动页点「微软登录」，按窗口里的网址输那八位代码；不想登正版就点「离线账号」随便起个名。</li>
-            <li><b>选版本</b>：去「下载」页，左边「原版游戏」里挑一个装，装完在启动页「我的版本」里点一下设为启动目标。</li>
-            <li><b>启动</b>：回启动页点「开始」。想调内存就去「设置 → 内存与下载」。</li>
+            <li><b>装版本</b>：去「下载」页左边「原版游戏」，挑一个装。加载器（Fabric / Forge / NeoForge）在装的时候一起选。</li>
+            <li><b>选目标</b>：装完回到启动页，「我的版本」里点一下那个版本，它就变成启动目标。</li>
+            <li><b>启动</b>：点「开始」。内存、窗口大小都在「设置 → 内存与下载」里调。</li>
           </ol>
         </div>
 
         <div class="card">
-          <div class="sec-title">下载页怎么用</div>
+          <div class="sec-title">下载页：原版、Mod、光影、整合包</div>
           <ol class="steps-list">
-            <li><b>原版</b>：右上角能切 BMCLAPI（国内快）和官方源，点「加载版本清单」会列出从 2009 年到现在全部版本，按「最新正式版 / 正式版 / 快照 / 远古」分组。</li>
-            <li><b>装模组</b>：左边点 Mod / 光影包 / 资源包 等，右边直接就是热门榜，不用搜也能挑；有目标就上面搜索框打关键词。</li>
-            <li><b>装下来放哪</b>：自动进这个版本的 mods / shaderpacks / resourcepacks / datapacks，不用手动解压。</li>
-            <li><b>名字看不懂</b>：模组名会自动显示中文，下面是英文原名。</li>
+            <li><b>原版</b>：右上角切 BMCLAPI（国内快）或官方源，点「加载版本清单」，从 2009 到现在全都在，按最新正式版 / 正式版 / 快照 / 远古分组。</li>
+            <li><b>社区资源</b>：左边点 Mod、光影包、资源包、整合包、数据包、服务端插件，右边直接是热门榜，不用搜也能挑。</li>
+            <li><b>按版本挑</b>：排序选「按支持版本（新→旧）」，右边会多出游戏版本下拉；选中某个版本，列表只留真的支持它的，卡片会标「支持 1.20.1 ✓」。</li>
+            <li><b>跟启动目标联动</b>：进下载页会自动用你在启动页选中的版本和加载器，不用再选一遍。</li>
+            <li><b>中文名</b>：名字来自 MC百科、苦力怕论坛这些中文社区，查不到就保留英文原名，不瞎翻。</li>
+            <li><b>装到哪</b>：自动进这个版本的 mods / shaderpacks / resourcepacks / datapacks，不用手动解压。</li>
           </ol>
         </div>
 
         <div class="card">
-          <div class="sec-title">出问题找小助手</div>
+          <div class="sec-title">Java：自动按版本配好</div>
           <ol class="steps-list">
-            <li>「小助手」页有「帮我看看为什么崩了」，它会读日志并自动修：重复 mod 挪走、缺前置补上、内存不足提示调大。</li>
-            <li>也可以在对话框里说人话：「有没有让帧数高一点的模组」「要个好玩点的整合包」，它会按意思去搜。</li>
-            <li>不满意就说「再推荐几个」，它会接着上一批继续翻。</li>
-            <li>想要一个陪聊 mod，说「给我做一个陪聊 mod」，会给你生成一套 Fabric 模组骨架。</li>
+            <li>1.16 及以下要 Java 8，1.17–1.20.4 要 17，1.20.5 以上要 21，启动器按版本自己挑。</li>
+            <li>本地没有对应版本时，启动时会自动下载（清华镜像，几秒），装到启动器目录的 java 文件夹。</li>
+            <li>想强制用自己装的 Java：设置里填「Java 路径」。版本对不上时它会按版本挑，并提醒你。</li>
+            <li>底部那行 Java 显示的是这个版本真正会用的那个，不是随手抓的。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">更新：点一下就好</div>
+          <ol class="steps-list">
+            <li>设置页「一键更新」：查版本 → 下载（大包分卷，进度按分卷显示）→ 自动替换 → 自动重启。</li>
+            <li>已经是最新版时，按钮会变成灰色的「已更新到最新版」，点了没反应，这是故意的。</li>
+            <li>更新在下次启动时覆盖文件，不会出现“更新到一半坏了”的情况。</li>
+            <li>有「联网就自动更新」开关，想手动控制就关掉它。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">小助手：能聊，也能给你做东西</div>
+          <ol class="steps-list">
+            <li><b>问答</b>：直接说人话——「有没有让帧数高一点的模组」「记忆怎么调」「光影怎么装」，它会按意思搜或者答。</li>
+            <li><b>崩溃排查</b>：「帮我看看为什么崩了」会读日志，重复 mod 挪走、缺前置补上、内存不足提示调大。</li>
+            <li><b>定制生成</b>：底部「定制一个」写需求，选类型，点「生成并安装」：数据包（秒出，/reload 就能用）、KubeJS 脚本、服务端插件（自动编译成 jar）、Fabric/Forge 模组（自动用 Gradle 编成 jar 装进 mods）。</li>
+            <li><b>模型</b>：想带自定义外观（武器、盔甲、方块）就把自己的模型传上去（.json / .bbmodel）；不传就按你的文字描述生成——写清楚形状、颜色，它会拆成部件拼出来；盔甲层的贴图也能按色值生成。</li>
+            <li><b>花的是你自己的 token</b>：生成走 DeepSeek，用的是设置里填的 Key；问答和搜索不花 token。</li>
+            <li><b>编译失败会自动回炉</b>：把 javac 的具体错误行回传，让它整份重写，最多三轮。</li>
           </ol>
         </div>
 
@@ -253,17 +307,26 @@
           <div class="sec-title">联机</div>
           <ol class="steps-list">
             <li>「联机」页三步：生成开服配置 → 下载官方服务端 → 开服。</li>
-            <li>勾着「正版校验」时只有微软正版号能进；不勾就是离线模式，谁拿到地址都能进。</li>
-            <li>局域网里直接连「你的内网IP:25565」；外网要先用内网穿透把 25565 映射出去。</li>
+            <li>家里有公网 IPv6 的话，页面会直接给你 `[你的IPv6]:25565`，朋友在游戏里「添加服务器」填这个就能进，不用内网穿透。</li>
+            <li>没有 IPv6 就点「开放防火墙」，然后走局域网（内网 IP:25565）或者自己找穿透。</li>
+            <li>勾着「正版校验」只有微软正版号能进；不勾就是离线模式。</li>
           </ol>
         </div>
 
         <div class="card">
-          <div class="sec-title">导出、分享、更新</div>
+          <div class="sec-title">皮肤、存档、截图</div>
           <ol class="steps-list">
-            <li>启动页「导出为整合包」：可以把当前版本的 mod 和设置打成一个 zip，勾选框决定带不带游戏设置和启动器设置。</li>
-            <li>设置页「分享长征启动器」：打一个包含 exe 和界面的压缩包，发给朋友就能用。</li>
-            <li>设置页「更新地址」填一个 version.json 的地址，点「检查更新」就能比对版本。</li>
+            <li>「皮肤库」能导入 64x64 / 64x32 的 PNG 皮肤，选一个当离线皮肤，开游戏前自动写进版本目录。</li>
+            <li>「存档与截图」按版本分好，能看存档图标、点开截图大图、删不要的。</li>
+          </ol>
+        </div>
+
+        <div class="card">
+          <div class="sec-title">导出、分享、导入</div>
+          <ol class="steps-list">
+            <li>启动页「导出为整合包」：把当前版本的 mod 和设置打成一个 zip，勾选框决定带不带游戏设置和启动器设置。</li>
+            <li>别人拿到这个包，用「导入整合包」就能还原（支持整合包 zip、mrpack、启动器分享包）。</li>
+            <li>设置页「分享长征启动器」：打一个能直接发给朋友的压缩包。</li>
           </ol>
         </div>
 
@@ -271,9 +334,10 @@
           <div class="sec-title">常见问题</div>
           <ol class="steps-list">
             <li><b>启动没反应 / 闪退</b>：先去小助手点「帮我看看为什么崩了」，八成是内存或前置问题。</li>
-            <li><b>Java 不对</b>：设置 → 其他 → Java 路径，填你 JDK 的 java.exe；1.16 以下建议 Java 8，1.17 以上 Java 17/21。</li>
-            <li><b>游戏目录在哪</b>：启动页信息卡会显示，默认是启动器旁边的 .minecraft 文件夹。</li>
-            <li><b>想恢复默认设置</b>：删掉游戏目录里对应版本文件夹的 options.txt。</li>
+            <li><b>画面糊 / 帧数低</b>：装光影要 Iris/OptiFine，帧数可以配合 Sodium/Lithium；内存别超过物理内存的一半。</li>
+            <li><b>mod 不生效</b>：确认加载器（Fabric 的 mod 不能扔进 Forge）、确认版本、确认不是 .disabled 后缀。</li>
+            <li><b>存档在哪</b>：开了版本隔离就在 `versions/&lt;版本&gt;/saves`，否则在 `.minecraft/saves`；整个游戏目录就在启动器文件夹里。</li>
+            <li><b>想彻底重来</b>：删掉启动器目录里的 `config.json`，其它（.minecraft、java、skins）都别删。</li>
           </ol>
         </div>
       </div>
@@ -350,7 +414,8 @@
       <button class="chip active" data-lang="zh">中文</button>
       <button class="chip" data-lang="en">English</button>
     </div>
-    <div class="pj-body" id="pjBody"></div>
+    <div class="pj-intro" id="pjIntro" style="display:none"></div>
+            <div class="pj-body" id="pjBody"></div>
     <div class="pj-tabs">
       <span>版本列表</span>
       <label class="mm-check"><input type="checkbox" id="pjOnlyCompat" checked>只看兼容当前版本</label>
