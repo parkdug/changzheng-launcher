@@ -500,3 +500,19 @@ select, input[type=number], input[type=text] {
 }
 
 #checkUpdateBtn, #reloadBtn { min-width: 128px; white-space: nowrap; }
+
+.pj-intro {
+  margin: 10px 0 6px; padding: 10px 12px; border-radius: 10px;
+  background: #FFF6F0; border: 1px solid #F0DCCF;
+  color: #5A4639; font-size: 13px; line-height: 1.7;
+}
+
+.gen-box textarea {
+  width: 100%; min-height: 68px; resize: vertical; padding: 10px 12px;
+  border: 1px solid #E6D6C9; border-radius: 10px; background: #FFFDFB;
+  font-family: inherit; font-size: 13px; color: #4A3A33; margin-top: 6px;
+}
+.gen-bar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.gen-bar select { padding: 8px 10px; border-radius: 10px; border: 1px solid #E6D6C9; background: #fff; }
+.gen-out { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #FFF6F0;
+  border: 1px solid #F0DCCF; font-size: 13px; color: #5A4639; line-height: 1.7; }
