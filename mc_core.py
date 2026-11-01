@@ -26,7 +26,9 @@ def _default_mc_dir():
 
 
 MC_DIR = os.environ.get("CZ_MC_DIR") or _default_mc_dir()
-_BASE = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+_BASE = (os.environ.get("CZ_BASE")
+         or (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+             else os.path.dirname(os.path.abspath(__file__))))
 JAVA_DIR = os.path.join(_BASE, "java")
 try:
     import jre as _jre
