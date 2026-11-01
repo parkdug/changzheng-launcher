@@ -154,6 +154,8 @@ def progress(msg):
     STATE["progress"] = msg
     PROGRESS["text"] = msg
     PROGRESS["ts"] = _time.time()
+    if any(word in msg for word in ("装好了", "下好了", "做好了", "导入完成", "完成（100/100）")):
+        PROGRESS["percent"] = 100
     m = _re.search(r"(\d+)\s*/\s*(\d+)", msg)
     if m:
         done, total = int(m.group(1)), int(m.group(2))
@@ -206,6 +208,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def end_headers(self):
         try:
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        except Exception:
+            pass
+        try:
             origin = (self.headers.get("Origin") or "").lower()
             allow = ""
             if origin in ("null", "file://"):
@@ -253,6 +261,7 @@ class Handler(BaseHTTPRequestHandler):
             ext = os.path.splitext(name)[1].lower()
             ctype = {".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8",
                      ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon"}.get(ext, "application/octet-stream")
+            self._no_cache = True
             self._file(os.path.join(WEB, name), ctype)
             return
 
@@ -873,6 +882,12 @@ class Handler(BaseHTTPRequestHandler):
                 profile = core.ms_to_minecraft(token["access_token"])
                 cfg["profile"] = profile
                 cfg["refresh_token"] = token.get("refresh_token", "")
+                profiles = cfg.get("profiles") or {}
+                profiles["msa"] = dict(profile)
+                profiles["msa"]["refresh_token"] = token.get("refresh_token", "")
+                cfg["profiles"] = profiles
+                cfg["active_kind"] = "msa"
+                cfg["msa_refreshed_at"] = int(__import__("time").time())
                 save_config(cfg)
                 self._json({"ok": True, "status": "ok", "name": profile["name"]})
             except Exception as error:
@@ -1190,9 +1205,53 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/offline":
             name = body.get("name") or "Player"
-            cfg["profile"] = core.offline_profile(name)
+            profile = core.offline_profile(name)
+            profiles = cfg.get("profiles") or {}
+            profiles["offline"] = dict(profile)
+            cfg["profiles"] = profiles
+            cfg["profile"] = profile
+            cfg["active_kind"] = "offline"
             save_config(cfg)
-            self._json({"ok": True})
+            self._json({"ok": True, "profile": profile})
+            return
+        if parsed.path == "/api/login/switch":
+            kind = (body.get("type") or "").strip().lower()
+            profiles = cfg.get("profiles") or {}
+            target = profiles.get(kind)
+            if not target:
+                self._json({"ok": False, "error": "这个账号还没登录过"})
+                return
+            if kind == "msa":
+                import time as _t5
+                cfg["profile"] = target
+                cfg["active_kind"] = "msa"
+                save_config(cfg)
+                self._json({"ok": True, "profile": target, "kind": "msa"})
+                # 超过 20 分钟才在后台静默续期，不拖慢点击
+                token = target.get("refresh_token") or ""
+                stale = (_t5.time() - float(cfg.get("msa_refreshed_at") or 0)) > 1200
+                if token and stale:
+                    def renew():
+                        try:
+                            data = core.refresh_ms(cfg.get("client_id"), token)
+                            profile = core.ms_to_minecraft(data["access_token"])
+                            conf = load_config()
+                            profs = conf.get("profiles") or {}
+                            profs["msa"] = dict(profile)
+                            profs["msa"]["refresh_token"] = data.get("refresh_token", token)
+                            conf["profiles"] = profs
+                            if conf.get("active_kind") == "msa":
+                                conf["profile"] = profile
+                            conf["msa_refreshed_at"] = int(_t5.time())
+                            save_config(conf)
+                        except Exception:
+                            pass
+                    threading.Thread(target=renew, daemon=True).start()
+                return
+            cfg["profile"] = target
+            cfg["active_kind"] = kind
+            save_config(cfg)
+            self._json({"ok": True, "profile": target, "kind": kind})
             return
         if parsed.path == "/api/install/vanilla":
             vid = body.get("id")
@@ -1335,7 +1394,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": str(error)})
             return
         if parsed.path == "/api/export":
-            import shutil as _sh
             import zipfile as _zip
 
             ver = body.get("version") or STATE.get("chosen") or (core.list_versions() or [None])[0]
@@ -1351,108 +1409,35 @@ class Handler(BaseHTTPRequestHandler):
                 return
             out_dir = os.path.join(BASE, "exports")
             os.makedirs(out_dir, exist_ok=True)
-            safe = "".join(ch for ch in name if ch not in '\\/:*?"<>|') or "长征整合包"
+            safe = "".join(ch for ch in name if ch not in '\/:*?"<>|') or "长征整合包"
             target = os.path.join(out_dir, safe + ".zip")
 
-            def pack():
+            def pack_export():
                 STATE["busy"] = True
                 try:
                     count = 0
                     with _zip.ZipFile(target, "w", _zip.ZIP_DEFLATED) as zf:
-                        mods = os.path.join(ver_dir, "mods")
-                        if os.path.isdir(mods):
-                            for f in os.listdir(mods):
-                                if f.endswith(".jar"):
-                                    zf.write(os.path.join(mods, f), "mods/" + f)
-                                    count += 1
-                        if include_game:
-                            for item in ("options.txt", "optionsof.txt", "servers.dat", "config",
-                                         "shaderpacks", "resourcepacks", "defaultconfigs", "kubejs"):
-                                src = os.path.join(ver_dir, item)
-                                if os.path.isfile(src):
-                                    zf.write(src, item)
-                                elif os.path.isdir(src):
-                                    for base2, _dirs, files in os.walk(src):
-                                        for f in files:
-                                            full = os.path.join(base2, f)
-                                            zf.write(full, os.path.relpath(full, ver_dir))
-                        manifest = {
-                            "name": name,
-                            "version": ver,
-                            "mc": mc_version_of(ver),
-                            "loader": loader_of(ver),
-                            "mods": count,
-                            "include_game": include_game,
-                            "include_launcher": include_launcher,
-                            "made_by": "长征启动器",
-                        }
-                        zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+                        for base2, _dirs, files in os.walk(ver_dir):
+                            for f in files:
+                                rel = os.path.relpath(os.path.join(base2, f), ver_dir)
+                                if rel.startswith("saves" + os.sep) and not include_game:
+                                    continue
+                                zf.write(os.path.join(base2, f), os.path.join("version", rel))
+                                count += 1
                         if include_launcher:
-                            keep = {k: cfg.get(k) for k in ("ram_mb", "jvm_args", "theme", "isolation",
-                                                            "win_size", "window_title", "priority")}
-                            zf.writestr("launcher.json", json.dumps(keep, ensure_ascii=False, indent=2))
-                    progress("整合包导出好了：%s（%d 个模组）" % (target, count))
+                            cfg_out = dict(cfg)
+                            for secret in ("deepseek_key", "curseforge_key", "microsoft_client_id"):
+                                cfg_out.pop(secret, None)
+                            zf.writestr("launcher-config.json", json.dumps(cfg_out, ensure_ascii=False, indent=2))
+                            zf.writestr("version.txt", open(os.path.join(BASE, "version.txt"), encoding="utf-8").read()
+                                        if os.path.isfile(os.path.join(BASE, "version.txt")) else "")
+                    progress("导出好了：%s（%d 个文件）" % (target, count))
                 except Exception as error:
                     progress("导出失败：%s" % error)
                 STATE["busy"] = False
 
-            threading.Thread(target=pack, daemon=True).start()
+            threading.Thread(target=pack_export, daemon=True).start()
             self._json({"ok": True, "path": target})
-            return
-        if parsed.path == "/api/download_update":
-            url = body.get("url") or ""
-            parts = body.get("parts") or []
-            if not url and not parts:
-                self._json({"ok": False, "error": "没有下载地址"})
-                return
-
-            def grab():
-                STATE["busy"] = True
-                folder = os.path.join(BASE, "updates")
-                name = os.path.basename((url or (parts[0] if parts else "")).split("?")[0]) or "update.zip"
-                if name.endswith(".001"):
-                    name = name[:-4] or "update.zip"
-                target = os.path.join(folder, name)
-                path, error = updater.download(url, target, progress, parts=body.get("parts") or None)
-                if path:
-                    STATE["update_file"] = path
-                else:
-                    progress(error)
-                STATE["busy"] = False
-
-            threading.Thread(target=grab, daemon=True).start()
-            self._json({"ok": True})
-            return
-        if parsed.path == "/api/update/apply":
-            src = STATE.get("update_file") or ""
-            if not src or not os.path.isfile(src):
-                self._json({"ok": False, "error": "还没下好更新包"})
-                return
-            auto = bool(body.get("auto"))
-            try:
-                import zipfile as _zip3
-                stage = os.path.join(BASE, "updates", "new")
-                if os.path.isdir(stage):
-                    import shutil as _sh3
-                    _sh3.rmtree(stage, ignore_errors=True)
-                with _zip3.ZipFile(src) as zf:
-                    _safe_extract(zf, stage)
-                self._json({"ok": True, "staged": stage, "auto": auto})
-                if auto:
-                    # 不再用 bat：先启动一个新的自己，新进程启动时会把 updates/new 覆盖进来
-                    import subprocess as _sp4
-                    exe = os.path.join(BASE, "长征启动器.exe")
-                    if not os.path.isfile(exe):
-                        exe = os.path.join(BASE, "长征引擎", "长征引擎.exe")
-                    try:
-                        if os.path.isfile(exe):
-                            _sp4.Popen([exe, "--apply-update"], cwd=BASE,
-                                       creationflags=0x08000000, close_fds=True)
-                    except Exception:
-                        pass
-                    threading.Timer(1.0, lambda: os._exit(0)).start()
-            except Exception as error:
-                self._json({"ok": False, "error": str(error)})
             return
         if parsed.path == "/api/share":
             import zipfile as _zip
@@ -1463,16 +1448,49 @@ class Handler(BaseHTTPRequestHandler):
                 STATE["busy"] = True
                 try:
                     with _zip.ZipFile(target, "w", _zip.ZIP_DEFLATED) as zf:
-                        for item in ("长征启动器.exe", "icon.ico"):
+                        electron = os.path.join(BASE, "electron")
+                        dist = os.path.join(electron, "node_modules", "electron", "dist")
+                        if os.path.isdir(dist):
+                            for base2, _dirs, files in os.walk(dist):
+                                for f in files:
+                                    full = os.path.join(base2, f)
+                                    zf.write(full, "electron/node_modules/electron/dist/" +
+                                             os.path.relpath(full, dist))
+                        for name in ("main.js", "package.json"):
+                            full = os.path.join(electron, name)
+                            if os.path.isfile(full):
+                                zf.write(full, "electron/" + name)
+                        engine = os.path.join(BASE, "长征引擎")
+                        for base2, _dirs, files in os.walk(engine):
+                            for f in files:
+                                full = os.path.join(base2, f)
+                                zf.write(full, "长征引擎/" + os.path.relpath(full, engine))
+                        web_dir = os.path.join(BASE, "web")
+                        for base2, _dirs, files in os.walk(web_dir):
+                            for f in files:
+                                full = os.path.join(base2, f)
+                                zf.write(full, os.path.relpath(full, BASE))
+                        for item in ("icon.ico", "version.txt", "translations.json", "长征启动器.exe"):
                             full = os.path.join(BASE, item)
                             if os.path.isfile(full):
                                 zf.write(full, item)
-                        web_dir = os.path.join(BASE, "web")
-                        if os.path.isdir(web_dir):
-                            for base2, _dirs, files in os.walk(web_dir):
-                                for f in files:
-                                    full = os.path.join(base2, f)
-                                    zf.write(full, os.path.relpath(full, BASE))
+                        sep = os.sep
+                        bat_exe = "%~dp0" + "electron" + sep + "node_modules" + sep + "electron" + sep + "dist" + sep + "electron.exe"
+                        bat_app = "%~dp0" + "electron"
+                        bat_text = ("@echo off" + chr(13) + chr(10) + "start " + chr(34) + chr(34) +
+                                    " " + chr(34) + bat_exe + chr(34) + " " + chr(34) + bat_app + chr(34) +
+                                    chr(13) + chr(10))
+                        zf.writestr("启动.bat", bat_text)
+                        nl = chr(13) + chr(10)
+                        guide = nl.join([
+                            "解压后双击 长征启动器.exe（或 启动.bat）就能用；",
+                            "存档和皮肤都在这个文件夹里，换电脑整个拷走即可。",
+                            "",
+                            "如果 Windows 弹「智能应用控制已阻止可能不安全的应用」：",
+                            "设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭。",
+                            "这是 Win11 对未签名程序的限制，关一次就不会再拦；若仍被拦，右键 exe → 属性 → 解除锁定。",
+                        ])
+                        zf.writestr("使用说明.txt", guide)
                     progress("分享包做好了：%s" % target)
                 except Exception as error:
                     progress("分享包失败：%s" % error)
